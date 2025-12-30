@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mycelium",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Durable Objects - each MCP session gets its own DO
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MYCELIUM_DO",
+        "class_name": "Mycelium"
+      }
+    ]
+  },
+
+  // KV namespace for OAuth session storage
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "YOUR_KV_ID_HERE"
+    }
+  ],
+
+  // Routes for production
+  "routes": [
+    { "pattern": "mycelium.grove.place", "zone_name": "grove.place" }
+  ],
+
+  // Environment variables (secrets set via wrangler secret put)
+  "vars": {
+    "ENVIRONMENT": "development"
+  }
+
+  // Secrets to configure:
+  // - HEARTWOOD_CLIENT_ID
+  // - HEARTWOOD_CLIENT_SECRET
+  // - COOKIE_ENCRYPTION_KEY
+}

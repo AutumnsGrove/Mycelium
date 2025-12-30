@@ -5,17 +5,27 @@
 ---
 
 ## Project Purpose
-[Fill in: What this project does - 1-2 sentences]
+
+**Mycelium** is Grove's Model Context Protocol (MCP) server - the communication network that lets AI agents interact with the entire Grove ecosystem. Built on Cloudflare Workers with Durable Objects.
 
 ## Tech Stack
-[Fill in: Technologies, frameworks, and languages used]
-- Language:
-- Framework:
-- Key Libraries:
-- Package Manager:
+
+- **Language:** TypeScript
+- **Runtime:** Cloudflare Workers
+- **Framework:** McpAgent (Durable Objects)
+- **Key Libraries:**
+  - `@modelcontextprotocol/sdk` - MCP server implementation
+  - `@cloudflare/workers-oauth-provider` - OAuth 2.0 support
+  - `zod` - Schema validation
+  - `agents` - Cloudflare McpAgent base class
+- **Package Manager:** pnpm
 
 ## Architecture Notes
-[Fill in: Key architectural decisions, patterns, or structure]
+
+- **Each MCP session is a Durable Object** with persistent SQLite storage
+- **Heartwood OAuth integration** for authentication
+- **Transport support**: Streamable HTTP (`/mcp`), SSE (`/sse`), WebSocket
+- **Tool groups**: Lattice (blogs), Bloom (dev), Amber (storage), Rings (analytics), Meadow (social), Scout (deals)
 
 ---
 
@@ -61,132 +71,132 @@ docs: Update README
 
 ---
 
+## Project Structure
+
+```
+mycelium/
+├── src/
+│   ├── index.ts              # Main entry, exports Mycelium class
+│   ├── types.ts              # Shared type definitions
+│   ├── tools/
+│   │   ├── lattice.ts        # Blog tools
+│   │   ├── bloom.ts          # Remote dev tools
+│   │   ├── amber.ts          # Storage tools
+│   │   ├── rings.ts          # Analytics tools
+│   │   ├── meadow.ts         # Social tools
+│   │   ├── scout.ts          # Deal finding tools
+│   │   └── context.ts        # Session management tools
+│   ├── auth/
+│   │   └── heartwood.ts      # OAuth handler
+│   └── state/
+│       ├── schema.ts         # State type definitions
+│       └── migrations.ts     # SQL migrations
+├── docs/
+│   ├── SPEC.md               # Full project specification
+│   └── grove-mcp-guide.md    # MCP implementation guide
+├── tests/                    # Test files
+├── wrangler.jsonc            # Cloudflare Workers config
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+---
+
+## MCP Tools Reference
+
+| Tool Group | Tools |
+|------------|-------|
+| **Lattice** | `lattice_posts_list`, `lattice_post_get`, `lattice_post_create`, `lattice_post_update`, `lattice_post_delete`, `lattice_drafts` |
+| **Bloom** | `bloom_session_start`, `bloom_session_status`, `bloom_session_stop`, `bloom_task_submit`, `bloom_logs` |
+| **Amber** | `amber_upload`, `amber_download`, `amber_list`, `amber_delete`, `amber_presign` |
+| **Rings** | `rings_query`, `rings_events`, `rings_dashboard` |
+| **Meadow** | `meadow_post`, `meadow_feed`, `meadow_following`, `meadow_followers` |
+| **Scout** | `scout_search`, `scout_track`, `scout_alerts` |
+| **Context** | `mycelium_context`, `mycelium_set_tenant`, `mycelium_set_project`, `mycelium_preferences`, `mycelium_history` |
+
+---
+
 ## When to Use Skills
 
 **This project uses Claude Code Skills for specialized workflows. Invoke skills using the Skill tool when you encounter these situations:**
 
-### Secrets & API Keys
-- **When managing API keys or secrets** → Use skill: `secrets-management`
-- **Before implementing secrets loading** → Use skill: `secrets-management`
-- **When integrating external APIs** → Use skill: `api-integration`
-
 ### Cloudflare Development
-- **When deploying to Cloudflare** → Use skill: `cloudflare-deployment`
-- **Before using Cloudflare Workers, KV, R2, or D1** → Use skill: `cloudflare-deployment`
-- **When setting up Cloudflare MCP server** → Use skill: `cloudflare-deployment`
-
-### Package Management
-- **When using UV package manager** → Use skill: `uv-package-manager`
-- **Before creating pyproject.toml** → Use skill: `uv-package-manager`
-- **When managing Python dependencies** → Use skill: `uv-package-manager`
+- **When deploying to Cloudflare** -> Use skill: `cloudflare-deployment`
+- **Before using Cloudflare Workers, KV, R2, or D1** -> Use skill: `cloudflare-deployment`
 
 ### Version Control
-- **Before making a git commit** → Use skill: `git-workflows`
-- **When initializing a new repo** → Use skill: `git-workflows`
-- **For git workflow and branching** → Use skill: `git-workflows`
-- **When setting up git hooks** → Use skill: `git-hooks`
-
-### Database Management
-- **When working with databases** → Use skill: `database-management`
-- **Before implementing data persistence** → Use skill: `database-management`
-- **For database.py template** → Use skill: `database-management`
-
-### Research & Analysis
-- **When researching technology decisions** → Use skill: `research-strategy`
-- **When analyzing unfamiliar codebases** → Use skill: `research-strategy`
-- **For systematic investigation** → Use skill: `research-strategy`
+- **Before making a git commit** -> Use skill: `git-workflows`
+- **For git workflow and branching** -> Use skill: `git-workflows`
 
 ### Testing
-- **Before writing Python tests** → Use skill: `python-testing`
-- **Before writing JavaScript/TypeScript tests** → Use skill: `javascript-testing`
-- **Before writing Go tests** → Use skill: `go-testing`
-- **Before writing Rust tests** → Use skill: `rust-testing`
+- **Before writing TypeScript tests** -> Use skill: `javascript-testing`
 
 ### Code Quality
-- **When formatting or linting code** → Use skill: `code-quality`
-- **Before major code changes** → Use skill: `code-quality`
-- **For Black, Ruff, mypy usage** → Use skill: `code-quality`
+- **When formatting or linting code** -> Use skill: `code-quality`
 
-### Project Setup & Infrastructure
-- **When starting a new project** → Use skill: `project-scaffolding`
-- **Setting up CI/CD pipelines** → Use skill: `cicd-automation`
-- **When containerizing applications** → Use skill: `docker-workflows`
-
-### Web Development
-- **When building Svelte 5 applications** → Use skill: `svelte5-development`
-- **For SvelteKit routing and forms** → Use skill: `svelte5-development`
-
-### CLI Development
-- **When building terminal interfaces** → Use skill: `rich-terminal-output`
-- **For Rich library patterns** → Use skill: `rich-terminal-output`
+### API Integration
+- **When integrating with Grove APIs** -> Use skill: `api-integration`
 
 ---
 
 ## Quick Reference
 
-### How to Use Skills
-Skills are invoked using the Skill tool. When a situation matches a skill trigger:
-1. Invoke the skill by name (e.g., `skill: "secrets-management"`)
-2. The skill will expand with detailed instructions
-3. Follow the skill's guidance for the specific task
+### Development Commands
 
-### Security Basics
-- Store API keys in `secrets.json` (NEVER commit)
-- Add `secrets.json` to `.gitignore` immediately
-- Provide `secrets_template.json` for setup
-- Use environment variables as fallbacks
+```bash
+# Install dependencies
+pnpm install
 
-### Available Skills Reference
-| Skill | Purpose |
-|-------|---------|
-| `secrets-management` | API keys, credentials, secrets.json |
-| `api-integration` | External REST API integration |
-| `database-management` | SQLite, database.py patterns |
-| `git-workflows` | Commits, branching, conventional commits |
-| `git-hooks` | Pre-commit hooks setup |
-| `uv-package-manager` | Python dependencies with UV |
-| `python-testing` | pytest, fixtures, mocking |
-| `javascript-testing` | Vitest/Jest testing |
-| `go-testing` | Go testing patterns |
-| `rust-testing` | Cargo test patterns |
-| `code-quality` | Black, Ruff, mypy |
-| `project-scaffolding` | New project setup |
-| `cicd-automation` | GitHub Actions workflows |
-| `docker-workflows` | Containerization |
-| `cloudflare-deployment` | Workers, KV, R2, D1 |
-| `svelte5-development` | Svelte 5 with runes |
-| `rich-terminal-output` | Terminal UI with Rich |
-| `research-strategy` | Systematic research |
+# Start local dev server
+pnpm dev
 
----
+# Deploy to Cloudflare
+pnpm deploy
 
-## Code Style Guidelines
+# Run type checking
+pnpm typecheck
 
-### Function & Variable Naming
-- Use meaningful, descriptive names
-- Keep functions small and focused on single responsibilities
-- Add docstrings to functions and classes
+# Run tests
+pnpm test
+```
 
-### Error Handling
-- Use try/except blocks gracefully
-- Provide helpful error messages
-- Never let errors fail silently
+### Cloudflare Setup
 
-### File Organization
-- Group related functionality into modules
-- Use consistent import ordering:
-  1. Standard library
-  2. Third-party packages
-  3. Local imports
-- Keep configuration separate from logic
+```bash
+# Create KV namespace for OAuth
+npx wrangler kv namespace create "OAUTH_KV"
+
+# Set secrets
+npx wrangler secret put HEARTWOOD_CLIENT_ID
+npx wrangler secret put HEARTWOOD_CLIENT_SECRET
+npx wrangler secret put COOKIE_ENCRYPTION_KEY
+```
+
+### Connecting Clients
+
+**Claude.ai Connectors:**
+- URL: `https://mycelium.grove.place/mcp`
+
+**Claude Desktop:**
+```json
+{
+  "mcpServers": {
+    "grove": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://mycelium.grove.place/sse"]
+    }
+  }
+}
+```
 
 ---
 
-## Communication Style
-- Be concise but thorough
-- Explain reasoning for significant decisions
-- Ask for clarification when requirements are ambiguous
-- Proactively suggest improvements when appropriate
+## Security Basics
+- Store secrets via `wrangler secret put` (NEVER commit)
+- OAuth tokens stored in encrypted KV
+- All tool calls logged for audit
+- Tenant isolation enforced per-tool
 
 ---
 
@@ -194,13 +204,16 @@ Skills are invoked using the Skill tool. When a situation matches a skill trigge
 
 ### Skills Documentation
 Skills are the primary way to access specialized knowledge. Use the Skill tool to invoke them.
-Skills are located in `.claude/skills/` and provide concise, actionable guidance.
 
 ### Extended Documentation
 For in-depth reference beyond what skills provide, see:
 **`AgentUsage/README.md`** - Master index of detailed documentation
 
+### Project Specifications
+- **`docs/SPEC.md`** - Full Mycelium specification
+- **`docs/grove-mcp-guide.md`** - MCP implementation guide
+
 ---
 
-*Last updated: 2025-12-22*
+*Last updated: 2025-12-30*
 *Model: Claude Opus 4.5*
