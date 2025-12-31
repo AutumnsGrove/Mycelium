@@ -23,20 +23,20 @@
 
 ### Core Implementation
 - [x] Implement basic McpAgent setup in index.ts
-- [ ] Implement Heartwood OAuth flow (auth/heartwood.ts)
-  - [x] /authorize redirect (stub)
-  - [ ] /callback token exchange
-  - [ ] /token refresh
+- [x] Implement Heartwood OAuth flow (auth/heartwood.ts)
+  - [x] /authorize redirect
+  - [x] /callback token exchange
+  - [x] /token refresh
 - [x] Implement session state persistence
 - [x] Run SQL migrations on DO init
 
 ### Tools - Lattice (Blog)
-- [ ] `lattice_posts_list` - List posts with filtering
-- [ ] `lattice_post_get` - Get single post by slug
-- [ ] `lattice_post_create` - Create new post
-- [ ] `lattice_post_update` - Update existing post
-- [ ] `lattice_post_delete` - Delete post
-- [ ] `lattice_drafts` - List user's drafts
+- [x] `lattice_posts_list` - List posts with filtering
+- [x] `lattice_post_get` - Get single post by slug
+- [x] `lattice_post_create` - Create new post
+- [x] `lattice_post_update` - Update existing post
+- [x] `lattice_post_delete` - Delete post
+- [x] `lattice_drafts` - List user's drafts
 
 ### Tools - Context (Session)
 - [x] `mycelium_context` - Return session state
