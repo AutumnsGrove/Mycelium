@@ -75,46 +75,94 @@ export const migrations: Migration[] = [
 /**
  * Run all pending migrations
  *
- * TODO: Implement when Durable Object storage is available
+ * Creates migrations tracking table and runs any pending migrations in order.
  */
-export async function runMigrations(sql: SqlStorage): Promise<void> {
-  // TODO: Implement migration runner
-  // - Create migrations table if not exists
-  // - Get current version
-  // - Run pending migrations in order
-  // - Update version after each migration
-  console.log("[STUB] runMigrations called");
+export function runMigrations(sql: SqlStorage): void {
+  // Create migrations tracking table if it doesn't exist
+  sql.exec(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at INTEGER NOT NULL
+    )
+  `);
+
+  // Get current version
+  const currentVersion = getCurrentVersion(sql);
+
+  // Run pending migrations in order
+  for (const migration of migrations) {
+    if (migration.version > currentVersion) {
+      console.log(`[Migration] Running v${migration.version}: ${migration.name}`);
+
+      // Execute the migration SQL
+      sql.exec(migration.up);
+
+      // Record the migration
+      sql.exec(`
+        INSERT INTO _migrations (version, name, applied_at)
+        VALUES (${migration.version}, '${migration.name}', ${Date.now()})
+      `);
+
+      console.log(`[Migration] Completed v${migration.version}`);
+    }
+  }
 }
 
 /**
- * Get current migration version
+ * Get current migration version from _migrations table
  */
-export async function getCurrentVersion(sql: SqlStorage): Promise<number> {
-  // TODO: Implement
-  return 0;
+export function getCurrentVersion(sql: SqlStorage): number {
+  try {
+    const cursor = sql.exec(`SELECT MAX(version) as version FROM _migrations`);
+    const results = [...cursor];
+    if (results.length > 0 && results[0].version !== null) {
+      return results[0].version as number;
+    }
+    return 0;
+  } catch {
+    // Table doesn't exist yet, return 0
+    return 0;
+  }
 }
 
 /**
  * Rollback to a specific version
  */
-export async function rollbackTo(sql: SqlStorage, targetVersion: number): Promise<void> {
-  // TODO: Implement rollback
-  console.log(`[STUB] rollbackTo version ${targetVersion}`);
+export function rollbackTo(sql: SqlStorage, targetVersion: number): void {
+  const currentVersion = getCurrentVersion(sql);
+
+  // Run down migrations in reverse order
+  for (let i = migrations.length - 1; i >= 0; i--) {
+    const migration = migrations[i];
+    if (migration.version > targetVersion && migration.version <= currentVersion) {
+      console.log(`[Migration] Rolling back v${migration.version}: ${migration.name}`);
+
+      sql.exec(migration.down);
+      sql.exec(`DELETE FROM _migrations WHERE version = ${migration.version}`);
+
+      console.log(`[Migration] Rolled back v${migration.version}`);
+    }
+  }
 }
 
 // =============================================================================
-// Type Stubs (will be provided by Cloudflare Workers runtime)
+// Type Definitions for Cloudflare SqlStorage
 // =============================================================================
 
-// Placeholder for Cloudflare SqlStorage type
-interface SqlStorage {
-  exec(query: string): unknown;
-  prepare(query: string): SqlPreparedStatement;
+/**
+ * SqlStorage interface provided by Cloudflare Durable Objects
+ * @see https://developers.cloudflare.com/durable-objects/api/sql-storage/
+ */
+export interface SqlStorage {
+  exec(query: string): SqlStorageCursor;
 }
 
-interface SqlPreparedStatement {
-  bind(...values: unknown[]): SqlPreparedStatement;
-  first<T>(): Promise<T | null>;
-  all<T>(): Promise<{ results: T[] }>;
-  run(): Promise<{ changes: number }>;
+interface SqlStorageCursor extends Iterable<Record<string, unknown>> {
+  [Symbol.iterator](): Iterator<Record<string, unknown>>;
+  toArray(): Record<string, unknown>[];
+  one(): Record<string, unknown> | null;
+  columnNames: string[];
+  rowsRead: number;
+  rowsWritten: number;
 }

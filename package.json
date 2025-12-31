@@ -14,17 +14,17 @@
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.0.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "agents": "^0.0.1",
+    "agents": "^0.3.3",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
     "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0",
-    "wrangler": "^3.100.0",
-    "eslint": "^9.0.0",
-    "prettier": "^3.4.0"
+    "wrangler": "^4.54.0"
   },
   "engines": {
     "node": ">=20.0.0"

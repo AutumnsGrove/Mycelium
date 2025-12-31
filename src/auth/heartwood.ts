@@ -57,7 +57,7 @@ export class HeartwoodHandler {
     //   - code_challenge_method: S256
 
     const heartwoodUrl = new URL("https://heartwood.grove.place/oauth/authorize");
-    heartwoodUrl.searchParams.set("client_id", env.HEARTWOOD_CLIENT_ID);
+    heartwoodUrl.searchParams.set("client_id", env.GROVEAUTH_CLIENT_ID);
     heartwoodUrl.searchParams.set("redirect_uri", `${url.origin}/callback`);
     heartwoodUrl.searchParams.set("response_type", "code");
     heartwoodUrl.searchParams.set("scope", "profile tenants:read tenants:write");
@@ -78,7 +78,7 @@ export class HeartwoodHandler {
   /**
    * Handle OAuth callback with authorization code
    */
-  private async handleCallback(url: URL, env: Env): Promise<Response> {
+  private async handleCallback(url: URL, _env: Env): Promise<Response> {
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     const error = url.searchParams.get("error");
@@ -115,7 +115,7 @@ export class HeartwoodHandler {
   /**
    * Handle token refresh
    */
-  private async handleToken(request: Request, env: Env): Promise<Response> {
+  private async handleToken(_request: Request, _env: Env): Promise<Response> {
     // TODO: Implement token refresh
     // - Parse refresh_token from request body
     // - POST to Heartwood /oauth/token with:
@@ -155,7 +155,7 @@ export async function getAuthPropsFromSession(
 /**
  * Verify access token is still valid
  */
-export async function verifyAccessToken(accessToken: string): Promise<boolean> {
+export async function verifyAccessToken(_accessToken: string): Promise<boolean> {
   // TODO: Implement token verification
   // - Call Heartwood /oauth/introspect
   // - Check if token is active

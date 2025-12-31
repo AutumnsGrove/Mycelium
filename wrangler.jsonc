@@ -15,11 +15,20 @@
     ]
   },
 
-  // KV namespace for OAuth session storage
-  "kv_namespaces": [
+  // Durable Objects migrations
+  "migrations": [
     {
-      "binding": "OAUTH_KV",
-      "id": "YOUR_KV_ID_HERE"
+      "tag": "v1",
+      "new_sqlite_classes": ["Mycelium"]
+    }
+  ],
+
+  // D1 database for OAuth session storage
+  "d1_databases": [
+    {
+      "binding": "OAUTH_DB",
+      "database_name": "mycelium-oauth",
+      "database_id": "fc477b40-3691-4a01-85b8-bb4e00b17606"
     }
   ],
 
@@ -34,7 +43,8 @@
   }
 
   // Secrets to configure:
-  // - HEARTWOOD_CLIENT_ID
-  // - HEARTWOOD_CLIENT_SECRET
+  // - GROVEAUTH_CLIENT_ID
+  // - GROVEAUTH_CLIENT_SECRET
+  // - GROVEAUTH_REDIRECT_URI
   // - COOKIE_ENCRYPTION_KEY
 }

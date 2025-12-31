@@ -28,13 +28,13 @@ export function registerAmberTools(agent: Mycelium): void {
       content: z.string().describe("File content (base64 encoded for binary)"),
       contentType: z.string().optional().describe("MIME type"),
     },
-    async ({ path, content, contentType }) => {
+    async ({ path, content: fileContent, contentType }) => {
       // TODO: Implement
       return {
         content: [
           {
             type: "text",
-            text: `[STUB] amber_upload called with path=${path}, contentType=${contentType}`,
+            text: `[STUB] amber_upload called with path=${path}, contentSize=${fileContent.length}, contentType=${contentType}`,
           },
         ],
       };

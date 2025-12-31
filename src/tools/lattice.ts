@@ -71,7 +71,7 @@ export function registerLatticeTools(agent: Mycelium): void {
       content: z.string().describe("Markdown content"),
       status: z.enum(["draft", "published"]).default("draft").describe("Post status"),
     },
-    async ({ tenant, title, content, status }) => {
+    async ({ tenant, title, content: postContent, status }) => {
       // TODO: Implement
       // - Verify user has write access to tenant
       // - Create post via Lattice API
@@ -80,7 +80,7 @@ export function registerLatticeTools(agent: Mycelium): void {
         content: [
           {
             type: "text",
-            text: `[STUB] lattice_post_create called with tenant=${tenant}, title=${title}, status=${status}`,
+            text: `[STUB] lattice_post_create called with tenant=${tenant}, title=${title}, content=${postContent.slice(0, 50)}..., status=${status}`,
           },
         ],
       };

@@ -16,19 +16,19 @@
 ## Phase 1: Foundation (MVP)
 
 ### Setup
-- [ ] Install dependencies (`pnpm install`)
-- [ ] Create Cloudflare KV namespace
+- [x] Install dependencies (`pnpm install`)
+- [x] Create Cloudflare D1 database (replaced KV)
 - [ ] Configure Heartwood OAuth client
 - [ ] Set secrets via wrangler
 
 ### Core Implementation
-- [ ] Implement basic McpAgent setup in index.ts
+- [x] Implement basic McpAgent setup in index.ts
 - [ ] Implement Heartwood OAuth flow (auth/heartwood.ts)
-  - [ ] /authorize redirect
+  - [x] /authorize redirect (stub)
   - [ ] /callback token exchange
   - [ ] /token refresh
-- [ ] Implement session state persistence
-- [ ] Run SQL migrations on DO init
+- [x] Implement session state persistence
+- [x] Run SQL migrations on DO init
 
 ### Tools - Lattice (Blog)
 - [ ] `lattice_posts_list` - List posts with filtering
@@ -39,16 +39,16 @@
 - [ ] `lattice_drafts` - List user's drafts
 
 ### Tools - Context (Session)
-- [ ] `mycelium_context` - Return session state
-- [ ] `mycelium_set_tenant` - Set active tenant
-- [ ] `mycelium_set_project` - Set active project
-- [ ] `mycelium_preferences` - Update preferences
-- [ ] `mycelium_history` - Get task history
+- [x] `mycelium_context` - Return session state
+- [x] `mycelium_set_tenant` - Set active tenant
+- [x] `mycelium_set_project` - Set active project
+- [x] `mycelium_preferences` - Update preferences
+- [x] `mycelium_history` - Get task history
 
 ### Testing & Deployment
 - [ ] Write unit tests for auth flow
 - [ ] Write unit tests for Lattice tools
-- [ ] Test with MCP Inspector locally
+- [x] Test with local dev server (`pnpm dev`)
 - [ ] Deploy to mycelium.grove.place
 - [ ] Test with Claude.ai Connectors
 

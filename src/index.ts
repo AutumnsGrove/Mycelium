@@ -7,7 +7,6 @@
 
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 
 import type { Env, SessionState, AuthProps } from "./types";
 import { HeartwoodHandler } from "./auth/heartwood";
@@ -18,12 +17,13 @@ import { registerRingsTools } from "./tools/rings";
 import { registerMeadowTools } from "./tools/meadow";
 import { registerScoutTools } from "./tools/scout";
 import { registerContextTools } from "./tools/context";
+import { runMigrations } from "./state/migrations";
 
 // =============================================================================
 // Mycelium MCP Agent
 // =============================================================================
 
-export class Mycelium extends McpAgent<Env, SessionState, AuthProps> {
+class Mycelium extends McpAgent<Env, SessionState, AuthProps> {
   server = new McpServer({
     name: "Mycelium",
     version: "1.0.0",
@@ -49,6 +49,9 @@ export class Mycelium extends McpAgent<Env, SessionState, AuthProps> {
    * Initialize the MCP server and register all tools
    */
   async init(): Promise<void> {
+    // Run database migrations for Durable Object SQLite
+    runMigrations(this.sql);
+
     // Register tool groups
     registerLatticeTools(this);
     registerBloomTools(this);
@@ -61,17 +64,55 @@ export class Mycelium extends McpAgent<Env, SessionState, AuthProps> {
 }
 
 // =============================================================================
-// Export OAuth-wrapped server
+// Request Handler
 // =============================================================================
 
-export default new OAuthProvider({
-  apiRoute: "/mcp",
-  apiHandler: Mycelium.Router,
-  defaultHandler: HeartwoodHandler,
-  authorizeEndpoint: "/authorize",
-  tokenEndpoint: "/token",
-  clientRegistrationEndpoint: "/register",
-});
+const heartwoodHandler = new HeartwoodHandler();
 
-// Also export for SSE endpoint support
+/**
+ * Main fetch handler for Cloudflare Workers
+ *
+ * Routes:
+ * - /authorize, /callback, /token - OAuth flow (Heartwood)
+ * - /mcp, /sse - MCP endpoints (Mycelium)
+ */
+async function handleFetch(
+  request: Request,
+  env: Env,
+  _ctx: ExecutionContext
+): Promise<Response> {
+  const url = new URL(request.url);
+
+  // OAuth endpoints
+  if (
+    url.pathname === "/authorize" ||
+    url.pathname === "/callback" ||
+    url.pathname === "/token"
+  ) {
+    return heartwoodHandler.fetch(request, env);
+  }
+
+  // MCP endpoints - route to Durable Object
+  if (url.pathname === "/mcp" || url.pathname === "/sse") {
+    const id = env.MYCELIUM_DO.idFromName("default");
+    const stub = env.MYCELIUM_DO.get(id);
+    return stub.fetch(request);
+  }
+
+  // Health check
+  if (url.pathname === "/health") {
+    return new Response(JSON.stringify({ status: "ok", service: "mycelium" }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response("Not Found", { status: 404 });
+}
+
+// Export the fetch handler
+export default {
+  fetch: handleFetch,
+};
+
+// Export Mycelium class for Durable Object binding
 export { Mycelium };

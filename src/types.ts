@@ -12,12 +12,13 @@ export interface Env {
   // Durable Object binding
   MYCELIUM_DO: DurableObjectNamespace;
 
-  // KV namespace for OAuth sessions
-  OAUTH_KV: KVNamespace;
+  // D1 database for OAuth sessions
+  OAUTH_DB: D1Database;
 
   // Secrets (set via wrangler secret put)
-  HEARTWOOD_CLIENT_ID: string;
-  HEARTWOOD_CLIENT_SECRET: string;
+  GROVEAUTH_CLIENT_ID: string;
+  GROVEAUTH_CLIENT_SECRET: string;
+  GROVEAUTH_REDIRECT_URI: string;
   COOKIE_ENCRYPTION_KEY: string;
 
   // Environment variables
