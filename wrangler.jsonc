@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
 
   // Durable Objects - each MCP session gets its own DO
   "durable_objects": {
@@ -29,6 +30,15 @@
       "binding": "OAUTH_DB",
       "database_name": "mycelium-oauth",
       "database_id": "fc477b40-3691-4a01-85b8-bb4e00b17606"
+    }
+  ],
+
+  // KV namespace for OAuth provider token storage
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "10e1c6a11f5f4bf18762c454863c93a8",
+      "preview_id": "f6bec47d64f44e17b29c60734792be75"
     }
   ],
 

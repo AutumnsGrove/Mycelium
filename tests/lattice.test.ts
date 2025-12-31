@@ -53,7 +53,8 @@ describe("Lattice Tools", () => {
 
       // Get the handler that would be registered
       // Since we can't easily test the registration, we test the logic
-      const targetTenant = null || mockAgent.state.activeTenant;
+      const tenant: string | undefined = undefined;
+      const targetTenant = tenant ?? mockAgent.state.activeTenant;
 
       expect(targetTenant).toBeNull();
     });

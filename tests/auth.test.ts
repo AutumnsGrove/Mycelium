@@ -19,6 +19,7 @@ const mockEnv: Env = {
   OAUTH_DB: {
     prepare: vi.fn(),
   } as unknown as D1Database,
+  OAUTH_KV: {} as KVNamespace,
   GROVEAUTH_CLIENT_ID: "mycelium",
   GROVEAUTH_CLIENT_SECRET: "test-secret",
   GROVEAUTH_REDIRECT_URI: "https://mycelium.grove.place/callback",
@@ -125,7 +126,7 @@ describe("HeartwoodHandler", () => {
       const response = await handler.fetch(request, mockEnv);
 
       expect(response.status).toBe(400);
-      const body = await response.json();
+      const body = (await response.json()) as { error: string; error_description: string };
       expect(body.error).toBe("access_denied");
       expect(body.error_description).toBe("User denied access");
     });
@@ -135,7 +136,7 @@ describe("HeartwoodHandler", () => {
       const response = await handler.fetch(request, mockEnv);
 
       expect(response.status).toBe(400);
-      const body = await response.json();
+      const body = (await response.json()) as { error: string };
       expect(body.error).toBe("missing_code");
     });
   });
@@ -150,7 +151,7 @@ describe("HeartwoodHandler", () => {
       const response = await handler.fetch(request, mockEnv);
 
       expect(response.status).toBe(400);
-      const body = await response.json();
+      const body = (await response.json()) as { error: string };
       expect(body.error).toBe("missing_refresh_token");
     });
 
@@ -170,7 +171,7 @@ describe("HeartwoodHandler", () => {
         body: JSON.stringify({ session_id: "test-session" }),
       });
 
-      const response = await handler.fetch(request, envWithDb);
+      await handler.fetch(request, envWithDb);
 
       expect(mockPrepare).toHaveBeenCalledWith(
         expect.stringContaining("SELECT refresh_token")

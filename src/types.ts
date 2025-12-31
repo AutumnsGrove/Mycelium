@@ -15,6 +15,9 @@ export interface Env {
   // D1 database for OAuth sessions
   OAUTH_DB: D1Database;
 
+  // KV namespace for OAuth provider token storage
+  OAUTH_KV: KVNamespace;
+
   // Secrets (set via wrangler secret put)
   GROVEAUTH_CLIENT_ID: string;
   GROVEAUTH_CLIENT_SECRET: string;
