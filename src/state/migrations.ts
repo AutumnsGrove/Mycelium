@@ -73,6 +73,23 @@ export const migrations: Migration[] = [
 // =============================================================================
 
 /**
+ * SqlStorage interface provided by Cloudflare Durable Objects
+ * @see https://developers.cloudflare.com/durable-objects/api/sql-storage/
+ */
+export interface SqlStorage {
+  exec(query: string): SqlStorageCursor;
+}
+
+interface SqlStorageCursor extends Iterable<Record<string, unknown>> {
+  [Symbol.iterator](): Iterator<Record<string, unknown>>;
+  toArray(): Record<string, unknown>[];
+  one(): Record<string, unknown> | null;
+  columnNames: string[];
+  rowsRead: number;
+  rowsWritten: number;
+}
+
+/**
  * Run all pending migrations
  *
  * Creates migrations tracking table and runs any pending migrations in order.
@@ -144,25 +161,4 @@ export function rollbackTo(sql: SqlStorage, targetVersion: number): void {
       console.log(`[Migration] Rolled back v${migration.version}`);
     }
   }
-}
-
-// =============================================================================
-// Type Definitions for Cloudflare SqlStorage
-// =============================================================================
-
-/**
- * SqlStorage interface provided by Cloudflare Durable Objects
- * @see https://developers.cloudflare.com/durable-objects/api/sql-storage/
- */
-export interface SqlStorage {
-  exec(query: string): SqlStorageCursor;
-}
-
-interface SqlStorageCursor extends Iterable<Record<string, unknown>> {
-  [Symbol.iterator](): Iterator<Record<string, unknown>>;
-  toArray(): Record<string, unknown>[];
-  one(): Record<string, unknown> | null;
-  columnNames: string[];
-  rowsRead: number;
-  rowsWritten: number;
 }

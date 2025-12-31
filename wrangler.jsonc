@@ -39,7 +39,7 @@
 
   // Environment variables (secrets set via wrangler secret put)
   "vars": {
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "production"
   }
 
   // Secrets to configure:

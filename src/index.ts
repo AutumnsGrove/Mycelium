@@ -50,7 +50,12 @@ class Mycelium extends McpAgent<Env, SessionState, AuthProps> {
    */
   async init(): Promise<void> {
     // Run database migrations for Durable Object SQLite
-    runMigrations(this.sql);
+    // Access the raw SQL storage from ctx for DDL statements
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storage = (this as any).ctx?.storage?.sql;
+    if (storage) {
+      runMigrations(storage);
+    }
 
     // Register tool groups
     registerLatticeTools(this);
