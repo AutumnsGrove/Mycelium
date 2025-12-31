@@ -56,7 +56,15 @@ const defaultHandler: ExportedHandler<Env> = {
     // Authorization endpoint - redirects to Heartwood
     if (url.pathname === "/authorize") {
       try {
-        const oauthReq = await ctx.parseAuthRequest(request);
+        // OAuthProvider injects helpers into env.OAUTH_PROVIDER
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const oauthHelpers = (env as any).OAUTH_PROVIDER;
+        if (!oauthHelpers) {
+          throw new Error("OAuth helpers not available");
+        }
+
+        const oauthReq = await oauthHelpers.parseAuthRequest(request);
+
         if (!oauthReq.clientId) {
           return new Response(
             JSON.stringify({
@@ -69,13 +77,16 @@ const defaultHandler: ExportedHandler<Env> = {
             }
           );
         }
+
+        // Store the oauthReq and completeAuthorization function for the callback
         return handleAuthorize(request, env, oauthReq);
       } catch (error) {
-        console.error("[OAuth] Parse auth request failed:", error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error("[OAuth] Parse auth request failed:", errorMessage);
         return new Response(
           JSON.stringify({
             error: "invalid_request",
-            error_description: "Could not parse OAuth request",
+            error_description: `Could not parse OAuth request: ${errorMessage}`,
           }),
           {
             status: 400,
@@ -87,10 +98,12 @@ const defaultHandler: ExportedHandler<Env> = {
 
     // Callback endpoint - completes OAuth flow after Heartwood auth
     if (url.pathname === "/callback") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const oauthHelpers = (env as any).OAUTH_PROVIDER;
       return handleCallback(
         request,
         env,
-        ctx.completeAuthorization.bind(ctx)
+        oauthHelpers.completeAuthorization.bind(oauthHelpers)
       );
     }
 

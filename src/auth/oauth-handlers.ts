@@ -24,15 +24,21 @@ export async function handleAuthorize(
   env: Env,
   oauthReq: AuthRequest
 ): Promise<Response> {
-  // Build Heartwood authorization URL
-  const heartwoodUrl = new URL("https://heartwood.grove.place/oauth/authorize");
+  // Build Heartwood authorization URL - uses /login as the authorize endpoint
+  const heartwoodUrl = new URL("https://heartwood.grove.place/login");
   heartwoodUrl.searchParams.set("client_id", env.GROVEAUTH_CLIENT_ID);
   heartwoodUrl.searchParams.set(
     "redirect_uri",
     "https://mycelium.grove.place/callback"
   );
-  heartwoodUrl.searchParams.set("response_type", "code");
-  heartwoodUrl.searchParams.set("scope", "profile tenants:read tenants:write");
+  // Note: GroveAuth uses PKCE, pass through code_challenge if provided
+  if (oauthReq.codeChallenge) {
+    heartwoodUrl.searchParams.set("code_challenge", oauthReq.codeChallenge);
+    heartwoodUrl.searchParams.set(
+      "code_challenge_method",
+      oauthReq.codeChallengeMethod || "S256"
+    );
+  }
 
   // Store Claude's OAuth request in state for the callback
   heartwoodUrl.searchParams.set("state", JSON.stringify({ oauthReq }));
