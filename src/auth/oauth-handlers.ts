@@ -130,17 +130,19 @@ export async function handleCallback(
     );
   }
 
-  // Exchange code with Heartwood for tokens
-  const tokenRes = await fetch("https://auth-api.grove.place/oauth/token", {
+  // Exchange code with Heartwood for tokens (form-urlencoded, not JSON)
+  const tokenParams = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    client_id: env.GROVEAUTH_CLIENT_ID,
+    client_secret: env.GROVEAUTH_CLIENT_SECRET,
+    redirect_uri: "https://mycelium.grove.place/callback",
+  });
+
+  const tokenRes = await fetch("https://auth-api.grove.place/token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "authorization_code",
-      code,
-      client_id: env.GROVEAUTH_CLIENT_ID,
-      client_secret: env.GROVEAUTH_CLIENT_SECRET,
-      redirect_uri: "https://mycelium.grove.place/callback",
-    }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: tokenParams.toString(),
   });
 
   if (!tokenRes.ok) {
