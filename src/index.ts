@@ -9,6 +9,7 @@
  */
 
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
+import { routeAgentRequest } from "agents";
 
 import type { Env } from "./types";
 import { handleAuthorize, handleCallback } from "./auth/oauth-handlers";
@@ -29,11 +30,14 @@ const apiHandler: ExportedHandler<Env> = {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // Route MCP/SSE requests to the Durable Object
+    // Route MCP/SSE requests to the Durable Object via agents routing
     if (url.pathname === "/mcp" || url.pathname === "/sse") {
-      const id = env.MYCELIUM_DO.idFromName("default");
-      const stub = env.MYCELIUM_DO.get(id);
-      return stub.fetch(request);
+      // routeAgentRequest handles the proper headers and routing for partyserver
+      const response = await routeAgentRequest(request, env);
+      if (response) {
+        return response;
+      }
+      return new Response("MCP endpoint not found", { status: 404 });
     }
 
     return new Response("Not Found", { status: 404 });
