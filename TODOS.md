@@ -10,7 +10,7 @@
 
 **Solution:** Internal Grove services (like Mycelium) now receive session tokens directly instead of auth codes.
 
-### All Tasks Completed
+### All Tasks Completed ✅
 
 #### GroveAuth Changes
 - [x] Create migration `005_internal_services.sql` - adds `is_internal_service` column to clients table
@@ -29,7 +29,6 @@
 - [x] Mark Mycelium as internal service in DB
 - [x] Deploy GroveAuth (v df2a1ebc-141b-4ad2-a71e-96bc0d2de058)
 - [x] Deploy Mycelium (v 8dd28589-4e44-4992-832d-182a5b0c35de)
-- [ ] Test with Claude.ai MCP connector (ready for testing)
 
 ### Files Modified
 
@@ -48,6 +47,58 @@ src/auth/oauth-handlers.ts                    (REWRITTEN)
 src/types.ts                                  (UPDATED)
 src/tools/lattice.ts                          (UPDATED)
 ```
+
+---
+
+## CURRENT: MCP Routing (In Progress - 2025-01-02)
+
+**Goal:** Fix MCP connection by using proper partyserver routing.
+
+**Problem:** After OAuth flow succeeds, Claude.ai tries to connect via `/sse` but gets error:
+```
+Error: Missing namespace or room headers when connecting to Mycelium.
+```
+
+**Root Cause:** Direct `stub.fetch()` doesn't work with `agents` package which uses `partyserver` internally. The `McpAgent` class expects specific routing headers.
+
+**Solution:** Use `routeAgentRequest()` from `agents` package instead of direct DO routing.
+
+### Progress
+
+#### Status
+- ✅ OAuth flow working (session token validation successful)
+- ✅ Token exchange working (completeAuth returns auth code to Claude)
+- ⏳ MCP connection failing (partyserver routing issue)
+
+#### Changes Made
+- [x] Import `routeAgentRequest` from `agents` package
+- [x] Replace `stub.fetch(request)` with `routeAgentRequest(request, env)`
+- [x] Handle null response from `routeAgentRequest`
+- [ ] Deploy and test (ready to deploy)
+
+#### Files Modified
+```
+src/index.ts  (UPDATED - apiHandler routing)
+```
+
+### Current Deployment Versions
+- GroveAuth: `df2a1ebc-141b-4ad2-a71e-96bc0d2de058`
+- Mycelium (pre-routing-fix): `8dd28589-4e44-4992-832d-182a5b0c35de`
+- Mycelium (committed, not deployed): `ac254de` (routing fix)
+
+### Next Steps
+1. Deploy updated Mycelium with routeAgentRequest fix
+2. Test MCP connection in Claude.ai
+3. Debug any remaining partyserver routing issues
+
+### Log Findings
+From latest logs (4:08:05 PM):
+- OAuth: ✅ Working
+- Session validation: ✅ Working
+- Token exchange: ✅ Working
+- MCP connection attempt: ❌ `TypeError: Incorrect type for Promise: the Promise did not resolve to 'Response'`
+
+This was fixed by awaiting `routeAgentRequest` and handling null response.
 
 ---
 
