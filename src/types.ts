@@ -80,8 +80,7 @@ export interface AuthProps {
   email: string;
   tenants: string[];
   scopes: string[];
-  accessToken: string;
-  refreshToken?: string;
+  sessionToken: string; // GroveAuth session token (SessionDO-based)
 }
 
 // =============================================================================

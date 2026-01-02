@@ -2,128 +2,52 @@
 
 ---
 
-## CURRENT: SessionDO Integration (In Progress)
+## SessionDO Integration (Complete - 2025-01-02)
 
-**Goal:** Fix OAuth PKCE mismatch by using GroveAuth's SessionDO for inter-service auth instead of OAuth code exchange.
+**Goal:** Fixed OAuth PKCE mismatch by using GroveAuth's SessionDO for inter-service auth instead of OAuth code exchange.
 
-**Problem:** Claude.ai sends `code_challenge` to Mycelium, but Mycelium can't exchange the auth code with GroveAuth because only Claude has the `code_verifier`.
+**Problem:** Claude.ai sent `code_challenge` to Mycelium, but Mycelium couldn't exchange the auth code with GroveAuth because only Claude had the `code_verifier`.
 
-**Solution:** Internal Grove services (like Mycelium) receive session tokens directly instead of auth codes.
+**Solution:** Internal Grove services (like Mycelium) now receive session tokens directly instead of auth codes.
 
-### Completed
+### All Tasks Completed
 
 #### GroveAuth Changes
 - [x] Create migration `005_internal_services.sql` - adds `is_internal_service` column to clients table
 - [x] Update `src/types.ts` - add `is_internal_service` to Client interface
 - [x] Add `/session/validate-service` endpoint to `src/routes/session.ts`
 - [x] Modify `src/routes/oauth/google.ts` - internal service redirect logic
+- [x] Modify `src/routes/oauth/github.ts` - internal service redirect logic
 
-#### Files Modified in GroveAuth
+#### Mycelium Changes
+- [x] Update `src/auth/oauth-handlers.ts` - session token validation flow
+- [x] Update `src/types.ts` - changed `accessToken` to `sessionToken` in AuthProps
+- [x] Update `src/tools/lattice.ts` - use `sessionToken` for auth headers
+
+#### Deployment
+- [x] Run migration on GroveAuth D1 (added `is_internal_service` column)
+- [x] Mark Mycelium as internal service in DB
+- [x] Deploy GroveAuth (v df2a1ebc-141b-4ad2-a71e-96bc0d2de058)
+- [x] Deploy Mycelium (v 8dd28589-4e44-4992-832d-182a5b0c35de)
+- [ ] Test with Claude.ai MCP connector (ready for testing)
+
+### Files Modified
+
+**GroveAuth:**
 ```
 src/db/migrations/005_internal_services.sql  (NEW)
 src/types.ts                                  (UPDATED)
 src/routes/session.ts                         (UPDATED)
 src/routes/oauth/google.ts                    (UPDATED)
+src/routes/oauth/github.ts                    (UPDATED)
 ```
 
-### Remaining Tasks
-
-#### GroveAuth (1 file)
-- [ ] **Modify GitHub OAuth callback** - `src/routes/oauth/github.ts`
-  - Import `createSessionCookie` from lib/session.js
-  - Add internal service check after session creation (around line 193)
-  - Add `buildInternalServiceRedirect` helper function
-  - Same pattern as google.ts changes
-
-#### Mycelium (2 files)
-- [ ] **Update `src/auth/oauth-handlers.ts`**
-  - Remove PKCE forwarding from `handleAuthorize()`
-  - Replace code exchange with session token validation in `handleCallback()`
-  - Call `/session/validate-service` endpoint
-  - Parse `session_token`, `user_id`, `email` from callback URL
-
-- [ ] **Update `src/types.ts`**
-  - Change `accessToken` to `sessionToken` in AuthProps interface
-
-#### Deployment
-- [ ] **Deploy GroveAuth**
-  ```bash
-  cd /Users/autumn/Documents/Projects/GroveAuth
-  npx wrangler d1 migrations apply groveauth --remote
-  npx wrangler deploy
-  ```
-
-- [ ] **Update Mycelium client in GroveAuth DB**
-  ```sql
-  UPDATE clients SET is_internal_service = 1 WHERE client_id = 'mycelium';
-  ```
-
-- [ ] **Deploy Mycelium**
-  ```bash
-  cd /Users/autumn/Documents/Projects/Mycelium
-  npx wrangler deploy
-  ```
-
-- [ ] **Test with Claude.ai MCP connector**
-
-### Reference Code
-
-#### handleCallback (Mycelium) - Target Implementation
-```typescript
-export async function handleCallback(
-  request: Request,
-  env: Env,
-  completeAuth: CompleteAuthFn
-): Promise<Response> {
-  const url = new URL(request.url);
-
-  // Session token flow (internal service)
-  const sessionToken = url.searchParams.get("session_token");
-  const userId = url.searchParams.get("user_id");
-  const email = url.searchParams.get("email");
-  const stateParam = url.searchParams.get("state");
-  const error = url.searchParams.get("error");
-
-  // Handle errors...
-
-  if (sessionToken && userId && email) {
-    // Validate session with GroveAuth
-    const validationRes = await fetch("https://auth-api.grove.place/session/validate-service", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_token: sessionToken }),
-    });
-
-    if (!validationRes.ok) {
-      return new Response(
-        JSON.stringify({ error: "session_invalid" }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    const state = JSON.parse(stateParam || "{}");
-
-    // Complete OAuth grant for Claude.ai
-    const { redirectTo } = await completeAuth({
-      request: state.oauthReq,
-      userId,
-      metadata: { email },
-      scope: state.oauthReq?.scope,
-      props: { userId, email, tenants: [], sessionToken },
-    });
-
-    return Response.redirect(redirectTo, 302);
-  }
-
-  return new Response(
-    JSON.stringify({ error: "invalid_callback" }),
-    { status: 400, headers: { "Content-Type": "application/json" } }
-  );
-}
+**Mycelium:**
 ```
-
-### Plan File
-Full implementation details at: `/Users/autumn/.claude/plans/dapper-humming-hellman.md`
+src/auth/oauth-handlers.ts                    (REWRITTEN)
+src/types.ts                                  (UPDATED)
+src/tools/lattice.ts                          (UPDATED)
+```
 
 ---
 
@@ -179,7 +103,7 @@ Full implementation details at: `/Users/autumn/.claude/plans/dapper-humming-hell
 - [x] Test with local dev server (`pnpm dev`)
 - [x] Deploy to mycelium.grove.place (deployed with OAuthProvider)
 - [x] OAuth metadata endpoint working (`/.well-known/oauth-authorization-server`)
-- [ ] Test with Claude.ai Connectors (blocked by SessionDO integration - see CURRENT section)
+- [ ] Test with Claude.ai Connectors (SessionDO integration complete - ready for testing)
 
 ---
 

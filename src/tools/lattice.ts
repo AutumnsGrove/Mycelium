@@ -536,8 +536,8 @@ export function registerLatticeTools(agent: Mycelium): void {
 function getAuthHeaders(agent: Mycelium): Record<string, string> {
   const headers: Record<string, string> = {};
 
-  if (agent.props?.accessToken) {
-    headers["Authorization"] = `Bearer ${agent.props.accessToken}`;
+  if (agent.props?.sessionToken) {
+    headers["Authorization"] = `Bearer ${agent.props.sessionToken}`;
   }
 
   return headers;

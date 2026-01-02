@@ -4,6 +4,9 @@
  * Handles the OAuth authorization flow with Heartwood integration.
  * Mycelium acts as an OAuth provider for Claude.ai,
  * delegating user authentication to Heartwood (GroveAuth).
+ *
+ * Uses SessionDO-based auth: GroveAuth returns session tokens directly
+ * to internal services instead of auth codes (bypasses PKCE requirements).
  */
 
 import type { Env } from "../types";
@@ -18,6 +21,9 @@ import type { AuthRequest } from "@cloudflare/workers-oauth-provider";
  *
  * Redirects to Heartwood for user authentication, storing Claude's
  * original OAuth request in the state parameter for the callback.
+ *
+ * Note: We don't forward PKCE params because as an internal service,
+ * GroveAuth returns session tokens directly (no code exchange needed).
  */
 export async function handleAuthorize(
   _request: Request,
@@ -31,16 +37,9 @@ export async function handleAuthorize(
     "redirect_uri",
     "https://mycelium.grove.place/callback"
   );
-  // Note: GroveAuth uses PKCE, pass through code_challenge if provided
-  if (oauthReq.codeChallenge) {
-    heartwoodUrl.searchParams.set("code_challenge", oauthReq.codeChallenge);
-    heartwoodUrl.searchParams.set(
-      "code_challenge_method",
-      oauthReq.codeChallengeMethod || "S256"
-    );
-  }
 
   // Store Claude's OAuth request in state for the callback
+  // No PKCE forwarding - we use session-based auth for internal services
   heartwoodUrl.searchParams.set("state", JSON.stringify({ oauthReq }));
 
   return Response.redirect(heartwoodUrl.toString(), 302);
@@ -59,7 +58,7 @@ interface CompleteAuthParams {
     userId: string;
     email: string;
     tenants: string[];
-    heartwoodToken: string;
+    sessionToken: string;
   };
 }
 
@@ -70,8 +69,9 @@ type CompleteAuthFn = (
 /**
  * Handle callback from Heartwood after user authentication
  *
- * Exchanges the authorization code with Heartwood for tokens,
- * then completes the OAuth grant for Claude.ai.
+ * For internal services (like Mycelium), Heartwood returns session tokens
+ * directly instead of auth codes. We validate the session and complete
+ * the OAuth grant for Claude.ai.
  */
 export async function handleCallback(
   request: Request,
@@ -79,7 +79,11 @@ export async function handleCallback(
   completeAuth: CompleteAuthFn
 ): Promise<Response> {
   const url = new URL(request.url);
-  const code = url.searchParams.get("code");
+
+  // Session token flow (internal service) - check these first
+  const sessionToken = url.searchParams.get("session_token");
+  const userId = url.searchParams.get("user_id");
+  const email = url.searchParams.get("email");
   const stateParam = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
@@ -95,20 +99,13 @@ export async function handleCallback(
     );
   }
 
-  // Validate required parameters
-  if (!code) {
-    return new Response(
-      JSON.stringify({ error: "missing_code", error_description: "No authorization code provided" }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
+  // Validate state parameter
   if (!stateParam) {
     return new Response(
-      JSON.stringify({ error: "missing_state", error_description: "No state parameter provided" }),
+      JSON.stringify({
+        error: "missing_state",
+        error_description: "No state parameter provided",
+      }),
       {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -122,7 +119,10 @@ export async function handleCallback(
     state = JSON.parse(stateParam);
   } catch {
     return new Response(
-      JSON.stringify({ error: "invalid_state", error_description: "Could not parse state parameter" }),
+      JSON.stringify({
+        error: "invalid_state",
+        error_description: "Could not parse state parameter",
+      }),
       {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -130,85 +130,95 @@ export async function handleCallback(
     );
   }
 
-  // Exchange code with Heartwood for tokens (form-urlencoded, not JSON)
-  const tokenParams = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    client_id: env.GROVEAUTH_CLIENT_ID,
-    client_secret: env.GROVEAUTH_CLIENT_SECRET,
-    redirect_uri: "https://mycelium.grove.place/callback",
-  });
+  // Session token flow (internal service)
+  if (sessionToken && userId && email) {
+    // Validate session with GroveAuth
+    const validationRes = await fetch(
+      "https://auth-api.grove.place/session/validate-service",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_token: sessionToken }),
+      }
+    );
 
-  const tokenRes = await fetch("https://auth-api.grove.place/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: tokenParams.toString(),
-  });
+    if (!validationRes.ok) {
+      const errorBody = await validationRes.text();
+      console.error("[OAuth] Session validation failed:", errorBody);
+      return new Response(
+        JSON.stringify({
+          error: "session_invalid",
+          error_description: "Session validation failed",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
 
-  if (!tokenRes.ok) {
-    const errorBody = await tokenRes.text();
-    console.error("[OAuth] Token exchange failed:", errorBody);
+    const validationData = (await validationRes.json()) as {
+      valid: boolean;
+      user?: { id: string; email: string; name?: string };
+      error?: string;
+    };
+
+    if (!validationData.valid) {
+      return new Response(
+        JSON.stringify({
+          error: "session_invalid",
+          error_description: validationData.error || "Session is not valid",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Complete OAuth grant for Claude.ai
+    const { redirectTo } = await completeAuth({
+      request: state.oauthReq,
+      userId,
+      metadata: { email },
+      scope: state.oauthReq?.scope,
+      props: {
+        userId,
+        email,
+        tenants: [], // TODO: Get tenants from user data if needed
+        sessionToken,
+      },
+    });
+
+    // Redirect back to Claude with authorization code
+    return Response.redirect(redirectTo, 302);
+  }
+
+  // If we get here without session_token, something went wrong
+  // This could be an old auth code flow attempt
+  const code = url.searchParams.get("code");
+  if (code) {
     return new Response(
       JSON.stringify({
-        error: "token_exchange_failed",
-        error_description: "Failed to exchange code for tokens",
+        error: "unsupported_flow",
+        error_description:
+          "Auth code flow is not supported. Mycelium requires session-based auth.",
       }),
       {
-        status: 502,
+        status: 400,
         headers: { "Content-Type": "application/json" },
       }
     );
   }
 
-  const tokens = (await tokenRes.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-  };
-
-  // Get user info from Heartwood
-  const userRes = await fetch("https://auth-api.grove.place/session/validate", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${tokens.access_token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!userRes.ok) {
-    console.error("[OAuth] User info fetch failed:", await userRes.text());
-    return new Response(
-      JSON.stringify({
-        error: "user_info_failed",
-        error_description: "Failed to fetch user information",
-      }),
-      {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  const user = (await userRes.json()) as {
-    id: string;
-    email: string;
-    tenants?: string[];
-  };
-
-  // Complete OAuth grant in OAuthProvider
-  const { redirectTo } = await completeAuth({
-    request: state.oauthReq,
-    userId: user.id,
-    metadata: { email: user.email },
-    scope: state.oauthReq?.scope,
-    props: {
-      userId: user.id,
-      email: user.email,
-      tenants: user.tenants || [],
-      heartwoodToken: tokens.access_token,
-    },
-  });
-
-  // Redirect back to Claude with authorization code
-  return Response.redirect(redirectTo, 302);
+  return new Response(
+    JSON.stringify({
+      error: "invalid_callback",
+      error_description: "Missing required callback parameters",
+    }),
+    {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }
