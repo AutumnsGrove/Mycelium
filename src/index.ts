@@ -9,40 +9,10 @@
  */
 
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
-import { routeAgentRequest } from "agents";
 
 import type { Env } from "./types";
+import { Mycelium } from "./agent";
 import { handleAuthorize, handleCallback } from "./auth/oauth-handlers";
-
-// =============================================================================
-// API Handler (Protected MCP Routes)
-// =============================================================================
-
-/**
- * Handler for authenticated MCP endpoints.
- * Routes are protected by OAuthProvider - only requests with valid Bearer tokens reach here.
- */
-const apiHandler: ExportedHandler<Env> = {
-  async fetch(
-    request: Request,
-    env: Env,
-    _ctx: ExecutionContext
-  ): Promise<Response> {
-    const url = new URL(request.url);
-
-    // Route MCP/SSE requests to the Durable Object via agents routing
-    if (url.pathname === "/mcp" || url.pathname === "/sse") {
-      // routeAgentRequest handles the proper headers and routing for partyserver
-      const response = await routeAgentRequest(request, env);
-      if (response) {
-        return response;
-      }
-      return new Response("MCP endpoint not found", { status: 404 });
-    }
-
-    return new Response("Not Found", { status: 404 });
-  },
-};
 
 // =============================================================================
 // Default Handler (OAuth Flow + Public Endpoints)
@@ -134,12 +104,15 @@ const defaultHandler: ExportedHandler<Env> = {
  * - /.well-known/oauth-authorization-server (RFC 8414 metadata)
  * - /oauth/token (token endpoint)
  * - /oauth/register (dynamic client registration)
- * - Bearer token validation for apiHandler routes
+ * - Bearer token validation for MCP routes
+ * - MCP connection via Mycelium.mount()
  */
 export default new OAuthProvider({
-  apiRoute: ["/mcp", "/sse"],
+  // Use mount() to create the fetch handler for MCP connections
+  // This handles both SSE and streamable HTTP transports
+  apiRoute: "/sse",
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  apiHandler: apiHandler as any,
+  apiHandler: Mycelium.mount("/sse") as any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   defaultHandler: defaultHandler as any,
   authorizeEndpoint: "/authorize",

@@ -50,55 +50,61 @@ src/tools/lattice.ts                          (UPDATED)
 
 ---
 
-## CURRENT: MCP Routing (In Progress - 2025-01-02)
+## CURRENT: MCP Routing (In Progress - 2025-01-03)
 
-**Goal:** Fix MCP connection by using proper partyserver routing.
+**Goal:** Fix MCP connection by using proper McpAgent.mount() pattern.
 
-**Problem:** After OAuth flow succeeds, Claude.ai tries to connect via `/sse` but gets error:
-```
-Error: Missing namespace or room headers when connecting to Mycelium.
-```
+**Problem History:**
+1. ❌ Direct `stub.fetch()` → "Missing namespace or room headers"
+2. ❌ `routeAgentRequest()` → "TypeError: Promise did not resolve to Response"
+3. ❌ `Mycelium.mount("/sse")` → "Could not find McpAgent binding for MCP_OBJECT"
 
-**Root Cause:** Direct `stub.fetch()` doesn't work with `agents` package which uses `partyserver` internally. The `McpAgent` class expects specific routing headers.
+**Root Cause:** `McpAgent.mount()` expects a Durable Object binding named `MCP_OBJECT` but we have `MYCELIUM_DO` in wrangler.jsonc.
 
-**Solution:** Use `routeAgentRequest()` from `agents` package instead of direct DO routing.
+**Research Findings:** (via web-research-specialist agent)
+- ✅ Correct pattern: Use `apiHandler: Mycelium.mount('/sse')` NOT `routeAgentRequest()`
+- ✅ OAuthProvider supports this with `apiHandler` parameter
+- ⚠️ `mount()` looks for DO binding named `MCP_OBJECT` by default
+- 📚 Reference: https://blog.cloudflare.com/remote-model-context-protocol-servers-mcp/
 
 ### Progress
 
 #### Status
-- ✅ OAuth flow working (session token validation successful)
+- ✅ OAuth flow working perfectly (session token validation successful)
 - ✅ Token exchange working (completeAuth returns auth code to Claude)
-- ⏳ MCP connection failing (partyserver routing issue)
+- ✅ `/sse` POST and GET requests reaching worker
+- ⏳ MCP binding name mismatch
 
 #### Changes Made
-- [x] Import `routeAgentRequest` from `agents` package
-- [x] Replace `stub.fetch(request)` with `routeAgentRequest(request, env)`
-- [x] Handle null response from `routeAgentRequest`
-- [ ] Deploy and test (ready to deploy)
+- [x] Research proper integration pattern (Mycelium.mount() not routeAgentRequest)
+- [x] Simplify index.ts - remove apiHandler wrapper, use mount() directly
+- [x] Update OAuthProvider config to use `apiHandler: Mycelium.mount("/sse")`
+- [ ] Fix DO binding name (MYCELIUM_DO → MCP_OBJECT or configure mount())
 
 #### Files Modified
 ```
-src/index.ts  (UPDATED - apiHandler routing)
+src/index.ts  (UPDATED - using Mycelium.mount() pattern)
 ```
 
 ### Current Deployment Versions
 - GroveAuth: `df2a1ebc-141b-4ad2-a71e-96bc0d2de058`
-- Mycelium (pre-routing-fix): `8dd28589-4e44-4992-832d-182a5b0c35de`
-- Mycelium (committed, not deployed): `ac254de` (routing fix)
+- Mycelium (current): `10ea48fa-a418-4c4b-9580-922f45294598` (with mount())
 
-### Next Steps
-1. Deploy updated Mycelium with routeAgentRequest fix
-2. Test MCP connection in Claude.ai
-3. Debug any remaining partyserver routing issues
+### Next Steps (When Resuming)
+1. Check if `mount()` accepts binding name parameter, or
+2. Rename `MYCELIUM_DO` to `MCP_OBJECT` in wrangler.jsonc, or
+3. Find alternate mount configuration
 
-### Log Findings
-From latest logs (4:08:05 PM):
+### Latest Log Findings
+From logs (12:32:13 PM):
 - OAuth: ✅ Working
 - Session validation: ✅ Working
 - Token exchange: ✅ Working
-- MCP connection attempt: ❌ `TypeError: Incorrect type for Promise: the Promise did not resolve to 'Response'`
+- SSE POST: ✅ Reaching worker
+- SSE GET: ✅ Reaching worker
+- MCP binding: ❌ `Error: Could not find McpAgent binding for MCP_OBJECT`
 
-This was fixed by awaiting `routeAgentRequest` and handling null response.
+**Key Insight:** We're SO close! The mount() pattern is correct, just needs the right binding name.
 
 ---
 
