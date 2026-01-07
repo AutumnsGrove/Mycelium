@@ -2,6 +2,63 @@
 
 ---
 
+## Better Auth Migration (Complete - 2026-01-07)
+
+**Goal:** Migrate from Heartwood legacy token-based auth to Better Auth session-based auth.
+
+**Benefits:**
+- KV-cached sessions with sub-100ms validation
+- Cross-subdomain SSO on `.grove.place`
+- Cookie-based sessions (no token management needed)
+- Simpler auth flow
+
+### All Tasks Completed ✅
+
+#### Auth Handler Changes
+- [x] Update `handleAuthorize` to redirect to Better Auth `/api/auth/sign-in/{provider}`
+- [x] Update `handleCallback` to use `/api/auth/session` for session validation
+- [x] Remove legacy Heartwood OAuth code exchange logic
+- [x] Use base64-encoded state for OAuth request preservation
+
+#### Helper Functions
+- [x] Rewrite `heartwood.ts` as Better Auth helpers:
+  - `validateSessionToken()` - validate session with Better Auth
+  - `getSessionFromCookie()` - get session from cookie header
+  - `isSessionExpired()` - check session expiry
+  - `signOut()` - invalidate session
+  - `getGoogleSignInUrl()` / `getGitHubSignInUrl()` - build auth URLs
+
+#### Type Updates
+- [x] Remove `scopes` from `AuthProps` (Better Auth doesn't use OAuth scopes)
+- [x] Keep `sessionToken` for tool authentication
+
+#### Tests
+- [x] Rewrite auth tests for Better Auth flow
+- [x] Test session validation helpers
+- [x] Test OAuth handler redirects and callbacks
+
+### Files Modified
+
+```
+src/auth/oauth-handlers.ts    (REWRITTEN - Better Auth integration)
+src/auth/heartwood.ts         (REWRITTEN - Better Auth helpers)
+src/types.ts                  (UPDATED - removed scopes from AuthProps)
+tests/auth.test.ts            (REWRITTEN - Better Auth tests)
+```
+
+### Key Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/auth/sign-in/google` | GET | Start Google OAuth |
+| `/api/auth/sign-in/github` | GET | Start GitHub OAuth |
+| `/api/auth/session` | GET | Get current session + user |
+| `/api/auth/sign-out` | POST | End session |
+
+All endpoints on `https://auth-api.grove.place`.
+
+---
+
 ## SessionDO Integration (Complete - 2025-01-02)
 
 **Goal:** Fixed OAuth PKCE mismatch by using GroveAuth's SessionDO for inter-service auth instead of OAuth code exchange.
@@ -9,6 +66,8 @@
 **Problem:** Claude.ai sent `code_challenge` to Mycelium, but Mycelium couldn't exchange the auth code with GroveAuth because only Claude had the `code_verifier`.
 
 **Solution:** Internal Grove services (like Mycelium) now receive session tokens directly instead of auth codes.
+
+**Note:** This has been superseded by the Better Auth migration above.
 
 ### All Tasks Completed ✅
 
@@ -29,24 +88,6 @@
 - [x] Mark Mycelium as internal service in DB
 - [x] Deploy GroveAuth (v df2a1ebc-141b-4ad2-a71e-96bc0d2de058)
 - [x] Deploy Mycelium (v 8dd28589-4e44-4992-832d-182a5b0c35de)
-
-### Files Modified
-
-**GroveAuth:**
-```
-src/db/migrations/005_internal_services.sql  (NEW)
-src/types.ts                                  (UPDATED)
-src/routes/session.ts                         (UPDATED)
-src/routes/oauth/google.ts                    (UPDATED)
-src/routes/oauth/github.ts                    (UPDATED)
-```
-
-**Mycelium:**
-```
-src/auth/oauth-handlers.ts                    (REWRITTEN)
-src/types.ts                                  (UPDATED)
-src/tools/lattice.ts                          (UPDATED)
-```
 
 ---
 
