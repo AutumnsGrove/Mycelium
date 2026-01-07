@@ -1,16 +1,18 @@
 /**
  * OAuth Handlers
  *
- * Handles the OAuth authorization flow with Heartwood integration.
+ * Handles the OAuth authorization flow with Better Auth integration.
  * Mycelium acts as an OAuth provider for Claude.ai,
- * delegating user authentication to Heartwood (GroveAuth).
+ * delegating user authentication to Better Auth (GroveAuth).
  *
- * Uses SessionDO-based auth: GroveAuth returns session tokens directly
- * to internal services instead of auth codes (bypasses PKCE requirements).
+ * Better Auth uses cookie-based sessions with cross-subdomain SSO on .grove.place
  */
 
 import type { Env } from "../types";
 import type { AuthRequest } from "@cloudflare/workers-oauth-provider";
+
+// Better Auth API base URL
+const BETTER_AUTH_API = "https://auth-api.grove.place";
 
 // =============================================================================
 // Authorization Handler
@@ -19,30 +21,35 @@ import type { AuthRequest } from "@cloudflare/workers-oauth-provider";
 /**
  * Handle OAuth authorization request from Claude.ai
  *
- * Redirects to Heartwood for user authentication, storing Claude's
+ * Redirects to Better Auth for user authentication, storing Claude's
  * original OAuth request in the state parameter for the callback.
  *
- * Note: We don't forward PKCE params because as an internal service,
- * GroveAuth returns session tokens directly (no code exchange needed).
+ * Better Auth handles Google/GitHub OAuth and sets session cookies automatically.
  */
 export async function handleAuthorize(
   _request: Request,
-  env: Env,
+  _env: Env,
   oauthReq: AuthRequest
 ): Promise<Response> {
-  // Build Heartwood authorization URL - uses /login as the authorize endpoint
-  const heartwoodUrl = new URL("https://heartwood.grove.place/login");
-  heartwoodUrl.searchParams.set("client_id", env.GROVEAUTH_CLIENT_ID);
-  heartwoodUrl.searchParams.set(
-    "redirect_uri",
+  // Default to Google, could be extended to support provider selection
+  const provider = "google";
+
+  // Build Better Auth sign-in URL
+  const authUrl = new URL(`${BETTER_AUTH_API}/api/auth/sign-in/${provider}`);
+
+  // Set callback URL to our /callback endpoint
+  authUrl.searchParams.set(
+    "callbackURL",
     "https://mycelium.grove.place/callback"
   );
 
   // Store Claude's OAuth request in state for the callback
-  // No PKCE forwarding - we use session-based auth for internal services
-  heartwoodUrl.searchParams.set("state", JSON.stringify({ oauthReq }));
+  // We encode it as base64 to avoid URL encoding issues
+  const stateData = JSON.stringify({ oauthReq });
+  const encodedState = btoa(stateData);
+  authUrl.searchParams.set("state", encodedState);
 
-  return Response.redirect(heartwoodUrl.toString(), 302);
+  return Response.redirect(authUrl.toString(), 302);
 }
 
 // =============================================================================
@@ -67,27 +74,21 @@ type CompleteAuthFn = (
 ) => Promise<{ redirectTo: string }>;
 
 /**
- * Handle callback from Heartwood after user authentication
+ * Handle callback from Better Auth after user authentication
  *
- * For internal services (like Mycelium), Heartwood returns session tokens
- * directly instead of auth codes. We validate the session and complete
- * the OAuth grant for Claude.ai.
+ * Better Auth sets a session cookie on .grove.place domain.
+ * We validate the session by calling /api/auth/session with the cookie,
+ * then complete the OAuth grant for Claude.ai.
  */
 export async function handleCallback(
   request: Request,
-  env: Env,
+  _env: Env,
   completeAuth: CompleteAuthFn
 ): Promise<Response> {
   const url = new URL(request.url);
 
-  // Session token flow (internal service) - check these first
-  const sessionToken = url.searchParams.get("session_token");
-  const userId = url.searchParams.get("user_id");
-  const email = url.searchParams.get("email");
-  const stateParam = url.searchParams.get("state");
+  // Check for errors from Better Auth
   const error = url.searchParams.get("error");
-
-  // Handle OAuth errors from Heartwood
   if (error) {
     const errorDesc = url.searchParams.get("error_description") || error;
     return new Response(
@@ -99,7 +100,8 @@ export async function handleCallback(
     );
   }
 
-  // Validate state parameter
+  // Get state parameter (contains Claude's OAuth request)
+  const stateParam = url.searchParams.get("state");
   if (!stateParam) {
     return new Response(
       JSON.stringify({
@@ -116,7 +118,8 @@ export async function handleCallback(
   // Parse state to get Claude's original OAuth request
   let state: { oauthReq: AuthRequest };
   try {
-    state = JSON.parse(stateParam);
+    const stateData = atob(stateParam);
+    state = JSON.parse(stateData);
   } catch {
     return new Response(
       JSON.stringify({
@@ -130,95 +133,113 @@ export async function handleCallback(
     );
   }
 
-  // Session token flow (internal service)
-  if (sessionToken && userId && email) {
-    // Validate session with GroveAuth
-    const validationRes = await fetch(
-      "https://auth-api.grove.place/session/validate-service",
+  // Get session from Better Auth using the cookie
+  // Better Auth sets the session cookie on .grove.place domain
+  const cookieHeader = request.headers.get("cookie") || "";
+
+  const sessionRes = await fetch(`${BETTER_AUTH_API}/api/auth/session`, {
+    headers: {
+      cookie: cookieHeader,
+    },
+  });
+
+  if (!sessionRes.ok) {
+    console.error("[OAuth] Session fetch failed:", await sessionRes.text());
+    return new Response(
+      JSON.stringify({
+        error: "session_invalid",
+        error_description: "Failed to retrieve session from Better Auth",
+      }),
       {
-        method: "POST",
+        status: 401,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_token: sessionToken }),
       }
     );
+  }
 
-    if (!validationRes.ok) {
-      const errorBody = await validationRes.text();
-      console.error("[OAuth] Session validation failed:", errorBody);
-      return new Response(
-        JSON.stringify({
-          error: "session_invalid",
-          error_description: "Session validation failed",
-        }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const validationData = (await validationRes.json()) as {
-      valid: boolean;
-      user?: { id: string; email: string; name?: string };
-      error?: string;
+  const sessionData = (await sessionRes.json()) as {
+    user?: {
+      id: string;
+      email: string;
+      name?: string;
     };
+    session?: {
+      id: string;
+      token: string;
+      expiresAt: string;
+    };
+  };
 
-    if (!validationData.valid) {
-      return new Response(
-        JSON.stringify({
-          error: "session_invalid",
-          error_description: validationData.error || "Session is not valid",
-        }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
+  // Validate that we have user data
+  if (!sessionData.user || !sessionData.session) {
+    return new Response(
+      JSON.stringify({
+        error: "session_invalid",
+        error_description: "No active session found",
+      }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
 
-    // Complete OAuth grant for Claude.ai
-    const { redirectTo } = await completeAuth({
-      request: state.oauthReq,
-      userId,
-      metadata: { email },
-      scope: state.oauthReq?.scope,
-      props: {
-        userId,
-        email,
-        tenants: [], // TODO: Get tenants from user data if needed
-        sessionToken,
+  const { user, session } = sessionData;
+
+  // Complete OAuth grant for Claude.ai
+  const { redirectTo } = await completeAuth({
+    request: state.oauthReq,
+    userId: user.id,
+    metadata: { email: user.email },
+    scope: state.oauthReq?.scope,
+    props: {
+      userId: user.id,
+      email: user.email,
+      tenants: [], // Better Auth doesn't include tenants in session - fetch separately if needed
+      sessionToken: session.token,
+    },
+  });
+
+  // Redirect back to Claude with authorization code
+  return Response.redirect(redirectTo, 302);
+}
+
+// =============================================================================
+// Session Validation Helper
+// =============================================================================
+
+/**
+ * Validate a session token with Better Auth
+ *
+ * Used by tools to verify the session is still valid before making API calls.
+ */
+export async function validateSession(
+  sessionToken: string
+): Promise<{ valid: boolean; user?: { id: string; email: string } }> {
+  try {
+    // For Better Auth, we can validate by fetching the session endpoint
+    // with the session token as a cookie
+    const res = await fetch(`${BETTER_AUTH_API}/api/auth/session`, {
+      headers: {
+        cookie: `better-auth.session_token=${sessionToken}`,
       },
     });
 
-    // Redirect back to Claude with authorization code
-    return Response.redirect(redirectTo, 302);
-  }
-
-  // If we get here without session_token, something went wrong
-  // This could be an old auth code flow attempt
-  const code = url.searchParams.get("code");
-  if (code) {
-    return new Response(
-      JSON.stringify({
-        error: "unsupported_flow",
-        error_description:
-          "Auth code flow is not supported. Mycelium requires session-based auth.",
-      }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  return new Response(
-    JSON.stringify({
-      error: "invalid_callback",
-      error_description: "Missing required callback parameters",
-    }),
-    {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
+    if (!res.ok) {
+      return { valid: false };
     }
-  );
+
+    const data = (await res.json()) as {
+      user?: { id: string; email: string };
+      session?: { id: string };
+    };
+
+    if (!data.user || !data.session) {
+      return { valid: false };
+    }
+
+    return { valid: true, user: data.user };
+  } catch {
+    return { valid: false };
+  }
 }

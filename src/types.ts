@@ -79,8 +79,7 @@ export interface AuthProps {
   userId: string;
   email: string;
   tenants: string[];
-  scopes: string[];
-  sessionToken: string; // GroveAuth session token (SessionDO-based)
+  sessionToken: string; // Better Auth session token (cookie-based)
 }
 
 // =============================================================================
