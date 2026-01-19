@@ -42,3 +42,10 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# Cloned reference repos (Phase 1 exploration)
+Amber/
+Foliage/
+GroveBloom/
+GroveAuth/
+groveengine/
