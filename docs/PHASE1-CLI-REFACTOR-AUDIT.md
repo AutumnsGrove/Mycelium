@@ -2,223 +2,329 @@
 
 **Date:** January 2026
 **Status:** Phase 1 Complete - Ready for Phase 2 Implementation
+**Package:** `@groveengine/cli` (locked in)
+**Language:** TypeScript (locked in)
 
 ---
 
 ## Executive Summary
 
-This document contains the complete Phase 1 exploration and audit for refactoring Mycelium from an MCP-first architecture to a **CLI-first architecture** with MCP as a thin wrapper. The deliverables include:
+This document contains the complete Phase 1 exploration and audit for refactoring Mycelium from an MCP-first architecture to a **CLI-first architecture** with MCP as a thin wrapper. All service repos have been cloned and thoroughly explored.
 
-1. Service catalog of all Grove services
-2. API audit for each service (current state, gaps, quality)
-3. Analysis of the `grove-find` CLI-first + agent mode pattern
-4. Comprehensive TODO list for Phase 2 implementation
-5. Language recommendation (TypeScript vs Python)
-6. Package name availability research
-
----
-
-## 1. Service Catalog
-
-### Core Services (Priority 1 - Already in Mycelium)
-
-| Service | Public Name | Domain | Purpose | Status |
-|---------|-------------|--------|---------|--------|
-| **Lattice** | Lattice | lattice.grove.place | Core blog platform/framework | **Active** |
-| **Heartwood** | Heartwood | heartwood.grove.place | Centralized authentication | **Active** |
-| **Amber** | Amber | amber.grove.place | Storage management (R2) | **Active** |
-| **Rings** | Rings | rings.grove.place | Privacy-first analytics | **Active** |
-| **Bloom** | Bloom | bloom.grove.place | Remote coding infrastructure | **Planned** |
-| **Meadow** | Meadow | meadow.grove.place | Social feed & community | **Planned** |
-
-### Extended Services (Priority 2 - Future Integration)
-
-| Service | Public Name | Purpose | Status |
-|---------|-------------|---------|--------|
-| **Reeds** | Reeds | Comments system | Active |
-| **Foliage** | Foliage | Theme system & customization | Active |
-| **Vista** | Vista | Infrastructure monitoring | Active |
-| **Clearing** | Clearing | Data export & migration | Active |
-| **Press** | Press | Image processing CLI | Active |
-| **Shutter** | Shutter | Web content distillation | New |
-| **Porch** | Porch | Support conversations | New |
-| **Pantry** | Pantry | Shop & merchandise | New |
-
-### Tertiary Services (Priority 3 - When Ready)
-
-| Service | Purpose | Status |
-|---------|---------|--------|
-| **Plant** | Tenant onboarding | Planned |
-| **Forage** | AI domain discovery | Active |
-| **Ivy** | Grove mail client | Planned |
-| **Loam** | Username protection | Active |
-| **Wisp** | Writing assistant | Planned |
-| **Waystone** | Help center | Planned |
-| **Forests** | Community aggregators | New |
-| **Wander** | Grove discovery | New |
-| **Trails** | Personal roadmaps | Planned |
-| **Thorn** | Security scanning | Planned |
-| **Patina** | Backup & recovery | Active |
-| **Shade** | AI content protection | Active |
+**Key Decisions (Locked In):**
+- **Package name:** `@groveengine/cli` on npm
+- **CLI command:** `grove` (e.g., `grove lattice posts list`)
+- **Language:** TypeScript (aligns with all Grove Workers/APIs)
+- **Auth storage:** System keychain (1st), env variable (2nd), config file (3rd)
+- **Default tenant:** CLI remembers last-used tenant
+- **Plugin system:** Scoped for future (Phase 3+)
+- **Interactive mode:** Optional flag, not default
 
 ---
 
-## 2. API Audit
+## 1. Service Catalog & Real Status
+
+### Core Services (Priority 1)
+
+| Service | Domain | Purpose | Actual Status | Notes |
+|---------|--------|---------|---------------|-------|
+| **Lattice** | `grove.place` | Core blog platform | **Active** | Basic API, needs expansion |
+| **Heartwood** | `auth-api.grove.place` | Centralized authentication | **Active (Production)** | Full Better Auth, no CLI flow yet |
+| **Amber** | `amber.grove.place` | Storage management (R2) | **95% Complete** | Worker done, no upload endpoint |
+| **Rings** | *(integrated)* | Privacy-first analytics | **Planned** | Not active yet |
+| **Bloom** | `bloom.grove.place` | Remote coding infrastructure | **Phase 4-5 Complete** | API + Dashboard done |
+| **Meadow** | `meadow.grove.place` | Social feed & community | **Planned** | Not active yet |
+
+### Extended Services (Priority 2)
+
+| Service | Purpose | Actual Status |
+|---------|---------|---------------|
+| **Foliage** | Theme system & customization | **Complete npm package** (10 themes, 13 components) |
+| **Reeds** | Comments system | Planned |
+| **Vista** | Infrastructure monitoring | Planned |
+| **Porch** | Support conversations | Planned |
+| **Pantry** | Shop & merchandise | Planned |
+| **Clearing** | Status page | Planned |
+
+---
+
+## 2. Detailed API Audit
+
+### Heartwood (Authentication) - PRODUCTION DEPLOYED
+
+**Repository:** `/home/user/GroveAuth`
+**Tech Stack:** Cloudflare Workers + Hono + D1 + KV + Durable Objects + Better Auth
+
+**Implemented Authentication Methods:**
+- Google OAuth (primary)
+- Discord OAuth
+- Magic Links (6-digit email codes, 10-min expiry)
+- Passkeys (WebAuthn)
+- Two-Factor Authentication (TOTP)
+
+**Current API Endpoints (Comprehensive):**
+```
+# Better Auth (New, Recommended)
+POST /api/auth/sign-in/social              OAuth login
+POST /api/auth/sign-in/magic-link          Magic link login
+POST /api/auth/sign-in/passkey             Passkey login
+GET  /api/auth/session                     Get current session
+POST /api/auth/sign-out                    Sign out
+POST /api/auth/passkey/*                   Passkey management (5 routes)
+POST /api/auth/two-factor/*                TOTP management (4 routes)
+
+# Legacy (Backwards Compatible)
+GET  /oauth/google                         Initiate Google OAuth
+POST /magic/send                           Send magic code email
+POST /magic/verify                         Verify magic code
+POST /token                                Exchange code for tokens
+POST /token/refresh                        Refresh access token
+GET  /userinfo                             Get current user info
+
+# Session Management
+GET  /session/list                         List all active sessions
+POST /session/revoke                       Logout current device
+POST /session/revoke-all                   Logout all devices
+DELETE /session/:id                        Revoke specific session
+```
+
+**CRITICAL GAP: No CLI Auth Flow**
+
+To add `grove login` (similar to Claude Code), need to implement:
+
+1. **Device Code Flow Endpoints:**
+   ```
+   POST /auth/device-code                   Generate device_code + user_code
+   POST /auth/device-code/verify            CLI polls for authorization
+   ```
+
+2. **Database Tables:**
+   ```sql
+   device_codes (device_code, user_code, status, expires_at)
+   api_tokens (token_hash, user_id, scopes, revoked)
+   ```
+
+3. **Frontend UI:**
+   - Page at `/auth/device?code=ABCD-1234` for user to confirm
+
+4. **CLI Flow:**
+   ```bash
+   $ grove login
+   Visit: https://auth-api.grove.place/auth/device?code=ABCD-1234
+   Code: ABCD-1234
+   Waiting for authorization...
+   ✓ Logged in as autumn@grove.place
+   ```
+
+**Quality:** Excellent foundation. Production-deployed with Better Auth. Just needs device code flow for CLI.
+
+---
 
 ### Lattice (Blogging Platform)
 
-**Current API Endpoints:**
+**Domain:** `grove.place`
+**Current Status:** Basic API, needs significant expansion
+
+**Current API (Basic):**
 ```
-POST   /api/{tenant}/posts          - Create post
-GET    /api/{tenant}/posts          - List posts
-GET    /api/{tenant}/posts/{slug}   - Get single post
-PUT    /api/{tenant}/posts/{slug}   - Update post
-DELETE /api/{tenant}/posts/{slug}   - Delete post
-GET    /api/{tenant}/drafts         - List drafts
+POST   /api/{tenant}/posts          Create post
+GET    /api/{tenant}/posts          List posts
+GET    /api/{tenant}/posts/{slug}   Get single post
+PUT    /api/{tenant}/posts/{slug}   Update post
+DELETE /api/{tenant}/posts/{slug}   Delete post
+GET    /api/{tenant}/drafts         List drafts
 ```
 
-**Current Mycelium Tools:** 6 tools implemented
-- `lattice_posts_list`, `lattice_post_get`, `lattice_post_create`
-- `lattice_post_update`, `lattice_post_delete`, `lattice_drafts`
+**Required Expansions:**
+```
+# Post Management (CRUD+)
+PATCH  /api/{tenant}/posts/{slug}   Partial update
+POST   /api/{tenant}/posts/{slug}/publish    Publish draft
+POST   /api/{tenant}/posts/{slug}/unpublish  Revert to draft
+POST   /api/{tenant}/posts/{slug}/schedule   Schedule publication
+GET    /api/{tenant}/posts/{slug}/revisions  Revision history
+POST   /api/{tenant}/posts/{slug}/restore    Restore revision
 
-**Gaps:**
-- No media upload endpoint exposed
-- No post scheduling API
-- No tag/category management
-- No bulk operations
+# Media Management
+POST   /api/{tenant}/media          Upload media
+GET    /api/{tenant}/media          List media
+DELETE /api/{tenant}/media/{id}     Delete media
+POST   /api/{tenant}/media/{id}/optimize    Optimize image
 
-**Quality:** Good - Core CRUD works. Ready for CLI wrapper.
+# Content Organization
+GET    /api/{tenant}/tags           List tags
+POST   /api/{tenant}/tags           Create tag
+GET    /api/{tenant}/categories     List categories
+POST   /api/{tenant}/series         Create post series
+GET    /api/{tenant}/series         List series
+
+# Bulk Operations
+POST   /api/{tenant}/posts/bulk     Bulk update/delete
+POST   /api/{tenant}/export         Export posts (JSON/Markdown)
+POST   /api/{tenant}/import         Import posts
+
+# Statistics (ties into Rings)
+GET    /api/{tenant}/stats          Site-wide stats
+GET    /api/{tenant}/posts/{slug}/stats    Per-post stats
+```
+
+**Quality:** Foundation exists, but API is very basic. Needs verbose expansion for full CLI support.
 
 ---
 
-### Heartwood (Authentication)
+### Amber (Storage) - 95% COMPLETE
 
-**Current API Endpoints:**
+**Repository:** `/home/user/Amber`
+**Tech Stack:** Cloudflare Workers + D1 + R2 + Durable Objects
+
+**Implemented API Endpoints:**
 ```
-GET    /api/auth/sign-in/google     - Start Google OAuth
-GET    /api/auth/sign-in/github     - Start GitHub OAuth
-GET    /api/auth/session            - Get current session + user
-POST   /api/auth/sign-out           - End session
-POST   /oauth/authorize             - OAuth authorization
-POST   /oauth/token                 - Token exchange
-GET    /oauth/userinfo              - User info
+# Storage Info
+GET    /api/storage                 Quota and usage breakdown
+GET    /api/storage/files           Paginated file list (filters, sorting)
+GET    /api/storage/files/:id       Single file metadata
+
+# File Operations
+DELETE /api/storage/files/:id       Move to trash
+POST   /api/storage/files/:id/restore  Restore from trash
+GET    /api/storage/trash           List trash files
+DELETE /api/storage/trash           Empty all trash
+DELETE /api/storage/trash/:id       Delete single trash file permanently
+
+# Downloads
+GET    /api/storage/download/:key   Download single file
+
+# Export (Background Jobs via Durable Objects)
+POST   /api/storage/export          Start export job
+GET    /api/storage/export/:id      Get export status
+GET    /api/storage/export/:id/download  Get download URL
+
+# Storage Add-ons
+GET    /api/storage/addons          List available/purchased add-ons
+POST   /api/storage/addons          Purchase add-on (Stripe placeholder)
+DELETE /api/storage/addons/:id      Cancel add-on
 ```
 
-**Current Mycelium Integration:** OAuth flow for authentication (no tools)
+**CRITICAL GAP: No File Upload Endpoint**
 
-**Gaps:**
-- No CLI-friendly auth flow (needs device code flow or API tokens)
-- No user management API exposed
-- No tenant permission management
+```
+# MISSING - Blocks CLI upload functionality
+POST   /api/storage/files           Upload file (multipart/form-data)
+POST   /api/storage/presign         Get presigned URL for direct upload
+```
 
-**Quality:** Good for OAuth, but needs CLI-friendly additions.
+**Also Missing:**
+- Presigned URLs for downloads (currently returns file content directly)
+- Stripe integration (placeholder only)
+- Heartwood auth integration (test mode works)
+
+**Quality:** Structurally excellent. Worker is production-ready. Just needs upload endpoint and presigned URLs.
 
 ---
 
-### Amber (Storage)
+### Bloom (Remote Coding) - PHASES 4-5 COMPLETE
 
-**Current API Endpoints:**
+**Repository:** `/home/user/GroveBloom`
+**Tech Stack:** Cloudflare Workers + Hono + D1 + R2 + Hetzner VPS
+
+**Implemented API Endpoints:**
 ```
-POST   /api/upload                  - Upload file
-GET    /api/files/{key}             - Download file
-GET    /api/files                   - List files
-DELETE /api/files/{key}             - Delete file
-GET    /api/presign/{key}           - Get presigned URL
-GET    /api/usage                   - Get storage usage
+# Session Management
+POST   /api/start                   Provision new VPS
+POST   /api/stop                    Graceful shutdown
+GET    /api/status                  Current session state
+
+# Task Management
+POST   /api/task                    Send autonomous task
+POST   /api/sync                    Manual R2 sync trigger
+
+# Configuration
+GET    /api/projects                List configured repos
+POST   /api/config                  Update settings
+
+# History
+GET    /api/history                 Session history + monthly summary
+
+# Webhooks (VPS → Worker)
+POST   /webhook/ready               VPS boot complete
+POST   /webhook/heartbeat           Daemon idle report
+POST   /webhook/task-complete       Task finished
+POST   /webhook/idle-timeout        Graceful shutdown trigger
 ```
 
-**Current Mycelium Tools:** 5 tools planned (not implemented)
-- `amber_upload`, `amber_download`, `amber_list`, `amber_delete`, `amber_presign`
+**Infrastructure:**
+- Hetzner VPS provisioning with cloud-init
+- Region support: EU (Falkenstein €0.008/hr), US (Ashburn €0.021/hr)
+- ttyd web terminal
+- bloom-daemon for idle detection
+- R2 sync for node_modules and workspace
 
-**Gaps:**
-- No bulk upload/download
-- No folder operations
-- No sync functionality
-- No image optimization endpoint
+**Implementation Status:**
+- ✅ Phase 4: Worker API (735 lines, fully functional)
+- ✅ Phase 5: SvelteKit Dashboard (mobile-first)
+- ⏳ Phases 1-3: Infrastructure setup (manual, needs credentials)
+- ⏳ Phases 6-8: Testing and VPS script validation
 
-**Quality:** Adequate for MVP, needs enhancement for full CLI.
+**Quality:** Much more developed than expected. Core orchestration complete. Ready for CLI wrapper once infrastructure is set up.
 
 ---
 
-### Rings (Analytics)
+### Foliage (Theming) - COMPLETE NPM PACKAGE
 
-**Current API Endpoints:**
+**Repository:** `/home/user/Foliage`
+**Package:** `@autumnsgrove/foliage`
+**Tech Stack:** SvelteKit library + D1 + R2
+
+**Features:**
+- 10 curated themes (Grove, Minimal, Night Garden, Zine, Moodboard, etc.)
+- 13 Svelte 5 components with full reactivity
+- Tier-based access control (Seedling → Sapling → Oak → Evergreen)
+- WCAG 2.1 AA contrast validation
+- Community theme marketplace
+- Custom font uploads (Evergreen tier)
+- 186 passing tests
+
+**Server Functions Available:**
+```typescript
+// Theme Management
+loadThemeSettings(db, tenantId)
+saveThemeSettings(db, settings)
+updateAccentColor(db, tenantId, color)
+updateThemeId(db, tenantId, themeId)
+resetThemeSettings(db, tenantId)
+
+// Font Management (Evergreen tier)
+uploadFont(r2, db, tenantId, buffer, metadata)
+deleteFont(r2, db, tenantId, fontId)
+listFonts(db, tenantId)
+
+// Community Themes
+createCommunityTheme(db, theme)
+listCommunityThemes(db, options)
+getApprovedThemes(db, limit, offset)
 ```
-GET    /api/{tenant}/stats          - Get basic stats
-GET    /api/{tenant}/posts/{id}/stats - Post-specific stats
-GET    /api/{tenant}/signals        - Get resonance signals
-POST   /api/events                  - Record event (internal)
-```
 
-**Current Mycelium Tools:** 3 tools planned (not implemented)
-- `rings_query`, `rings_events`, `rings_dashboard`
-
-**Gaps:**
-- No export functionality
-- No custom date ranges
-- No comparison tools
-- Limited query flexibility
-
-**Quality:** Spec is comprehensive, implementation unknown.
+**Quality:** Production-ready npm package. Just needs CLI commands added to Mycelium.
 
 ---
 
-### Bloom (Remote Dev)
+### Rings (Analytics) - PLANNED
 
-**Current API Endpoints:**
-```
-POST   /api/sessions                - Start session
-GET    /api/sessions/{id}           - Get session status
-DELETE /api/sessions/{id}           - Stop session
-POST   /api/sessions/{id}/tasks     - Submit task
-GET    /api/sessions/{id}/logs      - Get logs
-```
+Not active yet. Spec exists but no implementation.
 
-**Current Mycelium Tools:** 5 tools planned (not implemented)
-- `bloom_session_start`, `bloom_session_status`, `bloom_session_stop`
-- `bloom_task_submit`, `bloom_logs`
+### Meadow (Social) - PLANNED
 
-**Gaps:**
-- No project management API
-- No config management
-- No cost tracking API
-- No workspace sync commands
-
-**Quality:** Spec is detailed. API surface appropriate.
-
----
-
-### Meadow (Social)
-
-**Current API Endpoints:**
-```
-GET    /api/feed                    - Get feed
-POST   /api/vote                    - Vote on post
-POST   /api/reaction                - React to post
-GET    /api/bookmarks               - Get bookmarks
-POST   /api/bookmark                - Add bookmark
-```
-
-**Current Mycelium Tools:** 4 tools planned (not implemented)
-- `meadow_post`, `meadow_feed`, `meadow_following`, `meadow_followers`
-
-**Gaps:**
-- No direct posting API (posts come from Lattice)
-- Limited discovery features
-- No DM/messaging API
-
-**Quality:** Good spec, straightforward API.
+Not active yet. Spec exists but no implementation.
 
 ---
 
 ## 3. grove-find Analysis: CLI-First + Agent Mode Pattern
 
+**Location:** `/home/user/groveengine/scripts/repo/grove-find.sh`
+
 ### Key Pattern Elements
 
-The `grove-find.sh` script demonstrates the CLI-first + agent mode pattern:
-
-#### 1. **CLI-First Functions**
-All operations are shell functions that work from the command line:
+#### 1. CLI-First Functions
 ```bash
 gf "pattern"        # General search
 gfc "ClassName"     # Find class/component
@@ -226,16 +332,14 @@ gff "function"      # Find function definition
 gfi "module"        # Find imports
 ```
 
-#### 2. **Agent Mode via Environment Variable**
+#### 2. Agent Mode via Environment Variable
 ```bash
-# Agent mode disables colors for clean output
 if [ -n "$GF_AGENT" ]; then
     RED="" GREEN="" YELLOW="" BLUE="" PURPLE="" CYAN="" NC=""
 fi
 ```
 
-#### 3. **Condensed Agent Reference**
-The `gfagent` function provides a compact, copy-paste friendly reference:
+#### 3. Condensed Agent Reference
 ```bash
 gfagent() {
     if [ -z "$GF_AGENT" ]; then
@@ -246,309 +350,289 @@ gfagent() {
 }
 ```
 
-#### 4. **Tool Discovery**
-Binary discovery that works across different systems:
-```bash
-_grove_find_binary() {
-    local search_paths=(
-        "/opt/homebrew/bin"
-        "/usr/local/bin"
-        "$HOME/.local/bin"
-        # ...
-    )
-}
-```
-
-#### 5. **Fallback Support**
-Graceful degradation when tools aren't available:
-```bash
-_grove_fd() {
-    if [ -n "$GROVE_FD" ]; then
-        "$GROVE_FD" "$@"
-    else
-        # Fallback to find
-    fi
-}
-```
-
-### Applying This Pattern to Mycelium
-
-The `grove` CLI should follow this same pattern:
+### Applying to Grove CLI
 
 ```bash
-# CLI-first commands
-grove lattice posts list
-grove lattice post create --title "My Post"
-grove amber upload ./image.png
-grove bloom start --project lattice
+# Human mode (default)
+$ grove lattice posts list
+┌────────────────────────────────────────┐
+│ Posts (3 total)                        │
+├────────────────────────────────────────┤
+│ my-first-post    published   Jan 15    │
+│ draft-post       draft       Jan 14    │
+│ another-post     published   Jan 10    │
+└────────────────────────────────────────┘
 
-# Agent mode
-GROVE_AGENT=1 grove lattice posts list  # Clean JSON output
+# Agent mode (clean JSON)
+$ GROVE_AGENT=1 grove lattice posts list
+{"posts":[{"slug":"my-first-post","status":"published"...}]}
 
-# Quick reference for agents
-grove agent-help
+# Or with --json flag
+$ grove lattice posts list --json
 ```
 
 ---
 
-## 4. Package Name Availability
+## 4. Package Name Availability (LOCKED IN)
 
-### npm
+**Decision: `@groveengine/cli`**
 
-| Package | Status | Notes |
-|---------|--------|-------|
-| `grove` | Taken | Inactive (v0.4.0, old deps) |
-| `grove-cli` | Taken | Git worktree manager (prototype) |
-| `@grove/cli` | **Available** | Requires org ownership |
-| `@autumnsgrove/cli` | **Available** | Under your org |
-| `@autumnsgrove/grove` | **Available** | Under your org |
-| `@groveengine/cli` | **Available** | Under your org - **Recommended** |
-| `@groveengine/grove` | **Available** | Alternative |
-| `mycelium` | Unpublished | Was unpublished June 2025 |
+| Package | npm | PyPI | Status |
+|---------|-----|------|--------|
+| `grove` | Taken | Taken (HashiCorp) | ❌ |
+| `grove-cli` | Taken | Unknown | ❌ |
+| `mycelium` | Unpublished | Taken | ⚠️ |
+| **`@groveengine/cli`** | **Available** | - | ✅ **CHOSEN** |
 
-### PyPI
-
-| Package | Status | Notes |
-|---------|--------|-------|
-| `grove` | Taken | HashiCorp security (SaaS log collection) |
-| `grove-cli` | Unknown | Blocked by JS challenge |
-| `mycelium` | Taken | Luigi workflow library |
-
-### Recommendation
-
-**Use `@groveengine/cli`** for npm. This:
-- Is under your existing org
-- Provides a clean `npx @groveengine/cli` or `npm install -g @groveengine/cli` workflow
-- Aligns with `@autumnsgrove/groveengine` package pattern
-- Command can still be `grove` via package.json bin
-
-If Python is chosen, use `grove-cli` or `groveengine-cli` on PyPI.
+The CLI command will still be `grove` via package.json bin configuration:
+```json
+{
+  "name": "@groveengine/cli",
+  "bin": {
+    "grove": "./dist/cli/index.js"
+  }
+}
+```
 
 ---
 
-## 5. Language Recommendation
+## 5. Language Recommendation (LOCKED IN)
 
-### Analysis
-
-| Factor | TypeScript | Python |
-|--------|------------|--------|
-| **Existing ecosystem** | All Grove Workers/APIs are TypeScript | Only Mycelium is Python |
-| **Code sharing** | Can share types/clients with Workers | Separate implementations needed |
-| **MCP SDK** | @modelcontextprotocol/sdk (good) | FastMCP (easier, but less integrated) |
-| **CLI frameworks** | Commander, yargs, oclif | Click, Typer |
-| **Developer comfort** | Grove-native | Autumn's preference |
-| **Cloudflare integration** | Native Workers support | None |
-| **Build complexity** | More complex (bundling) | Simpler (pip install) |
-
-### Recommendation: **TypeScript**
+**Decision: TypeScript**
 
 **Rationale:**
-
-1. **Ecosystem alignment**: All Grove APIs are TypeScript. Writing the CLI in TypeScript means:
-   - Shared type definitions across CLI, MCP, and Workers
-   - One language for the entire stack
-   - Easier maintenance
-
-2. **Code sharing**: Service clients can be shared between CLI and MCP server:
-   ```typescript
-   // core/services/lattice.ts - shared by both CLI and MCP
-   export class LatticeClient {
-     async createPost(tenant: string, data: PostData): Promise<Post>
-   }
-   ```
-
-3. **MCP server can import CLI logic directly**:
-   ```typescript
-   // mcp/tools/lattice.ts
-   import { LatticeClient } from '../core/services/lattice';
-
-   this.server.tool("lattice_post_create", schema, async (params) => {
-     const client = new LatticeClient(this.props.sessionToken);
-     return client.createPost(params.tenant, params);
-   });
-   ```
-
-4. **Modern CLI tooling**: oclif or Commander.js provide excellent TypeScript support with:
-   - Automatic help generation
-   - Plugin architecture
-   - JSON output mode (for agent consumption)
-
-**Migration Path:**
-- Current Mycelium MCP code (TypeScript) can be refactored in place
-- Extract service clients to `core/services/`
-- Build CLI entry point in `cli/`
-- MCP server becomes a thin wrapper
+1. All Grove Workers/APIs are TypeScript
+2. Shared service clients between CLI and MCP
+3. Single language for entire Cloudflare stack
+4. Type-safe API interactions
+5. Native integration with existing codebase
 
 ---
 
-## 6. Comprehensive TODO List for Phase 2
+## 6. Auth Flow Design
 
-### Architecture Setup
+### `grove login` Flow (Like Claude Code)
 
-- [ ] Create new project structure:
-  ```
-  mycelium/
-    cli/
-      commands/        # Individual command implementations
-      index.ts         # CLI entry point
-    mcp/
-      server.ts        # MCP server (thin wrapper)
-      tools.ts         # MCP tool definitions
-    core/
-      services/        # Shared service clients
-      types.ts         # Shared type definitions
-      auth.ts          # Auth utilities
-  ```
-- [ ] Set up CLI framework (Commander.js or oclif)
-- [ ] Implement `--json` output flag for agent mode
-- [ ] Add `GROVE_AGENT=1` environment variable support
+```
+┌────────────────────────────────────────────────────────────────┐
+│                        grove login                              │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  $ grove login                                                  │
+│                                                                 │
+│  Opening browser...                                             │
+│  Or visit: https://auth-api.grove.place/auth/device?code=ABCD  │
+│  Code: ABCD-1234                                                │
+│                                                                 │
+│  Waiting for authorization... ⣾                                 │
+│                                                                 │
+│  ✓ Logged in as autumn@grove.place                             │
+│  Tenant: autumns-grove                                          │
+│  Token saved to system keychain                                 │
+│                                                                 │
+└────────────────────────────────────────────────────────────────┘
+```
 
-### Core Service Clients (Priority 1)
+### Token Storage Priority
 
-#### Lattice Client
-- [ ] `grove lattice posts list [--tenant] [--status] [--limit]`
-- [ ] `grove lattice post get <slug> [--tenant]`
-- [ ] `grove lattice post create --title <title> [--content] [--status]`
-- [ ] `grove lattice post update <slug> [--title] [--content] [--status]`
-- [ ] `grove lattice post delete <slug>`
-- [ ] `grove lattice drafts [--tenant]`
+1. **System keychain** (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+2. **Environment variable** (`GROVE_TOKEN`)
+3. **Config file** (`~/.grove/credentials.json`) - fallback
+
+### Admin vs. Regular User
+
+**Admin (Wayfinder/Pathfinder):**
+```bash
+$ grove config tenant autumns-grove   # Switch tenant
+$ grove config tenant maple-grove     # Work on another tenant
+$ grove lattice posts list            # Lists for current tenant
+```
+
+**Regular User:**
+- CLI remembers their single tenant
+- No tenant switching (locked to their account)
+
+---
+
+## 7. Open Questions Answered
+
+| Question | Decision |
+|----------|----------|
+| Auth storage | Keychain → env var → config file |
+| Default tenant | CLI remembers last-used |
+| Offline mode | No |
+| Plugins | Yes, scoped for future (Phase 3+) |
+| Interactive mode | Optional flag, not default |
+
+---
+
+## 8. Comprehensive TODO List for Phase 2
+
+### Critical Path (MVP)
+
+#### Heartwood: Device Code Auth
+- [ ] Add `device_codes` table to D1 schema
+- [ ] Add `api_tokens` table for CLI tokens
+- [ ] Implement `POST /auth/device-code` endpoint
+- [ ] Implement `POST /auth/device-code/verify` (polling endpoint)
+- [ ] Build device authorization UI at `/auth/device`
+- [ ] Add token refresh handling for CLI
+
+#### Amber: File Upload
+- [ ] Implement `POST /api/storage/files` (multipart upload)
+- [ ] Add file size validation (max 100MB)
+- [ ] Add MIME type validation
+- [ ] Implement presigned URL generation for downloads
+- [ ] Complete Heartwood auth integration
+
+#### Lattice: API Expansion
+- [ ] Add `PATCH /api/{tenant}/posts/{slug}` for partial updates
+- [ ] Add publish/unpublish/schedule endpoints
+- [ ] Add media upload endpoint
+- [ ] Add tags/categories endpoints
+- [ ] Add bulk operations endpoint
+- [ ] Add export/import endpoints
+
+### CLI Framework Setup
+
+- [ ] Initialize `@groveengine/cli` package
+- [ ] Set up Commander.js or oclif
+- [ ] Implement `--json` output flag
+- [ ] Implement `GROVE_AGENT=1` environment variable
+- [ ] Add `grove --version` and `grove --help`
+
+### Core CLI Commands
+
+#### Authentication (`grove auth`)
+- [ ] `grove login` - Device code auth flow
+- [ ] `grove logout` - Revoke token
+- [ ] `grove whoami` - Show current user
+- [ ] `grove auth status` - Show auth state
+- [ ] System keychain integration
+
+#### Configuration (`grove config`)
+- [ ] `grove config init` - Interactive setup
+- [ ] `grove config tenant [name]` - Get/set tenant
+- [ ] `grove config list` - Show all config
+- [ ] Config file at `~/.grove/config.json`
+
+#### Lattice Commands (`grove lattice`)
+- [ ] `grove lattice posts list [--status] [--limit]`
+- [ ] `grove lattice posts get <slug>`
+- [ ] `grove lattice posts create --title <title> [--content] [--status]`
+- [ ] `grove lattice posts update <slug> [--title] [--content] [--status]`
+- [ ] `grove lattice posts delete <slug>`
+- [ ] `grove lattice posts publish <slug>`
+- [ ] `grove lattice posts unpublish <slug>`
+- [ ] `grove lattice drafts`
 - [ ] `grove lattice media upload <file>`
 - [ ] `grove lattice media list`
 
-#### Amber Client
+#### Amber Commands (`grove amber`)
 - [ ] `grove amber upload <file> [--path]`
 - [ ] `grove amber download <key> [--output]`
 - [ ] `grove amber list [--prefix] [--limit]`
 - [ ] `grove amber delete <key>`
-- [ ] `grove amber presign <key> [--expires]`
-- [ ] `grove amber usage`
-- [ ] `grove amber sync <local-dir> <remote-prefix>` (future)
+- [ ] `grove amber trash`
+- [ ] `grove amber trash --empty`
+- [ ] `grove amber quota`
+- [ ] `grove amber export [--type full|blog|ivy]`
 
-#### Heartwood Client
-- [ ] `grove auth login` (browser-based OAuth flow)
-- [ ] `grove auth login --device` (device code flow for CLI)
-- [ ] `grove auth logout`
-- [ ] `grove auth status`
-- [ ] `grove auth token` (show current token)
-- [ ] `grove whoami`
+#### Bloom Commands (`grove bloom`)
+- [ ] `grove bloom start [--region eu|us] [--project]`
+- [ ] `grove bloom status`
+- [ ] `grove bloom stop`
+- [ ] `grove bloom task <description>`
+- [ ] `grove bloom logs [--follow]`
+- [ ] `grove bloom history`
 
-#### Rings Client
-- [ ] `grove rings stats [--tenant]`
-- [ ] `grove rings post <post-id> [--tenant]`
-- [ ] `grove rings signals [--tenant]`
-- [ ] `grove rings export [--format csv|json]`
+#### Foliage Commands (`grove foliage`)
+- [ ] `grove foliage list-themes [--tier]`
+- [ ] `grove foliage info <theme-id>`
+- [ ] `grove foliage set-theme <theme-id>`
+- [ ] `grove foliage set-accent <color>`
+- [ ] `grove foliage current`
+- [ ] `grove foliage community list`
+- [ ] `grove foliage community browse` (interactive)
 
-### Extended Service Clients (Priority 2)
+### Shared Service Clients
 
-#### Bloom Client
-- [ ] `grove bloom start [--project] [--region] [--task]`
-- [ ] `grove bloom status [session-id]`
-- [ ] `grove bloom stop [session-id]`
-- [ ] `grove bloom task <task-description>`
-- [ ] `grove bloom logs [session-id] [--follow]`
-- [ ] `grove bloom projects list`
+- [ ] Create `core/services/heartwood.ts` (auth client)
+- [ ] Create `core/services/lattice.ts` (blog client)
+- [ ] Create `core/services/amber.ts` (storage client)
+- [ ] Create `core/services/bloom.ts` (VPS client)
+- [ ] Create `core/services/foliage.ts` (theming client)
+- [ ] Create `core/types.ts` (shared types)
 
-#### Meadow Client
-- [ ] `grove meadow feed [--sort popular|hot|new]`
-- [ ] `grove meadow bookmarks`
-- [ ] `grove meadow bookmark <post-url>`
-- [ ] `grove meadow vote <post-url> [up|down]`
+### MCP Server Refactor
 
-### MCP Wrapper
+- [ ] Refactor MCP tools to use shared service clients
+- [ ] Maintain session state (active tenant, project)
+- [ ] Map CLI commands → MCP tools
 
-- [ ] Refactor MCP server to use CLI service clients
-- [ ] Map each CLI command to MCP tool:
-  ```typescript
-  // Example mapping
-  "lattice_posts_list" -> LatticeClient.listPosts()
-  "amber_upload"       -> AmberClient.upload()
-  ```
-- [ ] Maintain session state in MCP (active tenant, project, etc.)
-- [ ] Add MCP-specific context tools (`mycelium_context`, etc.)
+### Future Phases (Scoped)
 
-### Authentication
+#### Phase 3: Extended Services
+- [ ] Add Rings commands (when API is ready)
+- [ ] Add Meadow commands (when API is ready)
+- [ ] Add Reeds commands (when API is ready)
 
-- [ ] Implement device code OAuth flow for CLI
-- [ ] Secure credential storage (keychain/credential manager)
-- [ ] Token refresh handling
-- [ ] Multi-account support (future)
-
-### Agent Mode
-
-- [ ] `--json` flag for machine-readable output
-- [ ] `--quiet` flag for minimal output
-- [ ] `GROVE_AGENT=1` environment variable
-- [ ] `grove agent-help` condensed reference
-- [ ] Clean exit codes (0 success, 1 error, 2 auth required)
-
-### Configuration
-
-- [ ] `grove config init` - interactive setup
-- [ ] `grove config set <key> <value>`
-- [ ] `grove config get <key>`
-- [ ] `grove config list`
-- [ ] Support for `~/.grove/config.json` or `~/.groverc`
-- [ ] Environment variable overrides
-
-### Documentation
-
-- [ ] CLI help text for all commands
-- [ ] Man pages (optional)
-- [ ] `grove --help` comprehensive help
-- [ ] README with quick start guide
-
-### Testing
-
-- [ ] Unit tests for service clients
-- [ ] Integration tests for CLI commands
-- [ ] E2E tests for MCP server
-- [ ] Mock API responses for offline testing
-
-### Packaging & Distribution
-
-- [ ] Publish to npm as `@groveengine/cli`
-- [ ] Set up GitHub releases
-- [ ] Create Homebrew formula (optional)
-- [ ] Add to Claude Desktop MCP config example
+#### Phase 3+: Plugin System
+- [ ] Plugin discovery mechanism
+- [ ] Plugin installation (`grove plugins install`)
+- [ ] Plugin API for third-party extensions
 
 ---
 
-## 7. Target Architecture (Phase 2)
+## 9. Target Architecture
 
 ```
 mycelium/
 ├── cli/
 │   ├── commands/
+│   │   ├── auth/
+│   │   │   ├── login.ts
+│   │   │   ├── logout.ts
+│   │   │   └── whoami.ts
+│   │   ├── config/
+│   │   │   ├── init.ts
+│   │   │   ├── tenant.ts
+│   │   │   └── list.ts
 │   │   ├── lattice/
-│   │   │   ├── posts.ts       # grove lattice posts ...
-│   │   │   ├── media.ts       # grove lattice media ...
+│   │   │   ├── posts.ts
+│   │   │   ├── media.ts
 │   │   │   └── index.ts
 │   │   ├── amber/
 │   │   │   ├── upload.ts
 │   │   │   ├── download.ts
+│   │   │   ├── list.ts
 │   │   │   └── index.ts
 │   │   ├── bloom/
-│   │   │   └── ...
-│   │   ├── rings/
-│   │   │   └── ...
-│   │   ├── meadow/
-│   │   │   └── ...
-│   │   ├── auth.ts            # grove auth ...
-│   │   └── config.ts          # grove config ...
-│   └── index.ts               # CLI entry point
+│   │   │   ├── start.ts
+│   │   │   ├── stop.ts
+│   │   │   ├── status.ts
+│   │   │   └── index.ts
+│   │   └── foliage/
+│   │       ├── list-themes.ts
+│   │       ├── set-theme.ts
+│   │       └── index.ts
+│   ├── utils/
+│   │   ├── output.ts        # JSON/table formatting
+│   │   ├── auth.ts          # Keychain + token handling
+│   │   └── config.ts        # Config file management
+│   └── index.ts             # CLI entry point
 ├── mcp/
-│   ├── server.ts              # McpAgent wrapper
-│   └── tools.ts               # Tool definitions -> CLI commands
+│   ├── server.ts            # McpAgent wrapper
+│   └── tools.ts             # Tool definitions → CLI commands
 ├── core/
 │   ├── services/
-│   │   ├── lattice.ts         # Lattice API client
-│   │   ├── amber.ts           # Amber API client
-│   │   ├── bloom.ts           # Bloom API client
-│   │   ├── rings.ts           # Rings API client
-│   │   ├── meadow.ts          # Meadow API client
-│   │   └── heartwood.ts       # Auth client
-│   ├── types.ts               # Shared type definitions
-│   └── config.ts              # Configuration management
+│   │   ├── heartwood.ts     # Auth client
+│   │   ├── lattice.ts       # Blog client
+│   │   ├── amber.ts         # Storage client
+│   │   ├── bloom.ts         # VPS client
+│   │   └── foliage.ts       # Theme client
+│   ├── types.ts             # Shared type definitions
+│   └── config.ts            # Configuration management
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -556,84 +640,94 @@ mycelium/
 
 ---
 
-## 8. Migration Strategy
+## 10. Migration Strategy
 
-### Step 1: Extract Service Clients
-Move API interaction logic from current MCP tools into shared clients:
+### Step 1: Create Shared Service Clients
+Extract API interaction logic into `core/services/`:
 ```typescript
-// Before: src/tools/lattice.ts (MCP-specific)
-this.server.tool("lattice_post_create", ..., async (params) => {
-  const response = await fetch(`https://lattice.grove.place/api/...`);
-  // ...
-});
-
-// After: core/services/lattice.ts (shared)
+// core/services/lattice.ts
 export class LatticeClient {
-  async createPost(tenant: string, data: PostData): Promise<Post> {
-    const response = await fetch(`https://lattice.grove.place/api/...`);
-    // ...
+  constructor(private token: string, private tenant: string) {}
+
+  async listPosts(options?: ListPostsOptions): Promise<Post[]> {
+    const response = await fetch(`https://grove.place/api/${this.tenant}/posts`);
+    return response.json();
   }
+
+  async createPost(data: CreatePostData): Promise<Post> { ... }
+  async updatePost(slug: string, data: UpdatePostData): Promise<Post> { ... }
+  async deletePost(slug: string): Promise<void> { ... }
 }
 ```
 
 ### Step 2: Build CLI Layer
-Create CLI commands that use the shared clients:
 ```typescript
 // cli/commands/lattice/posts.ts
 import { LatticeClient } from '../../core/services/lattice';
+import { getAuthToken, getTenant } from '../../utils/auth';
 
-export const createPostCommand = new Command('create')
-  .option('--title <title>')
-  .option('--content <content>')
+export const listPostsCommand = new Command('list')
+  .option('--status <status>')
+  .option('--limit <n>')
+  .option('--json')
   .action(async (options) => {
-    const client = new LatticeClient(await getAuthToken());
-    const post = await client.createPost(getTenant(), options);
-    console.log(JSON.stringify(post, null, 2));
+    const client = new LatticeClient(await getAuthToken(), getTenant());
+    const posts = await client.listPosts(options);
+
+    if (options.json || process.env.GROVE_AGENT) {
+      console.log(JSON.stringify(posts));
+    } else {
+      printPostsTable(posts);
+    }
   });
 ```
 
-### Step 3: Rewire MCP Server
-MCP server becomes a thin wrapper:
+### Step 3: Refactor MCP Server
 ```typescript
 // mcp/tools.ts
 import { LatticeClient } from '../core/services/lattice';
 
 export function registerLatticeTools(server: McpServer, auth: AuthProps) {
-  const client = new LatticeClient(auth.sessionToken);
+  const client = new LatticeClient(auth.sessionToken, state.activeTenant);
 
-  server.tool("lattice_post_create", schema, async (params) => {
-    const post = await client.createPost(params.tenant, params);
-    return formatMcpResponse(post);
+  server.tool("lattice_posts_list", schema, async (params) => {
+    const posts = await client.listPosts(params);
+    return formatMcpResponse(posts);
   });
 }
 ```
 
 ---
 
-## 9. Open Questions for Phase 2
-
-1. **Authentication storage**: Use system keychain, config file, or environment variable?
-2. **Default tenant**: Should CLI remember last-used tenant?
-3. **Offline mode**: Cache any data locally for offline access?
-4. **Plugin system**: Allow third-party extensions?
-5. **Interactive mode**: REPL-style interface?
-
----
-
 ## Conclusion
 
-Phase 1 exploration is complete. The Grove ecosystem has a well-documented set of services with varying levels of API maturity. The `grove-find` pattern provides an excellent template for CLI-first + agent mode design.
+Phase 1 is complete with comprehensive exploration of all key Grove services:
 
-**Recommended next steps:**
-1. Create new project structure in Mycelium repo
-2. Extract Lattice client as proof of concept
-3. Build `grove lattice` CLI commands
-4. Refactor MCP server to use shared client
-5. Iterate on other services
+- **Heartwood:** Production-ready auth, needs device code flow for CLI
+- **Amber:** 95% complete Worker, needs upload endpoint
+- **Bloom:** More developed than expected, API + Dashboard done
+- **Foliage:** Complete npm package, ready for CLI commands
+- **Lattice:** Basic API, needs significant expansion
 
-**Time estimate:** This is a significant refactor. Recommend breaking into incremental PRs:
-- PR 1: Project restructure + Lattice client
-- PR 2: CLI framework + `grove lattice` commands
-- PR 3: MCP refactor to use clients
-- PR 4: Amber + Heartwood
-- PR 5: Bloom + Rings + Meadow
+**Locked In Decisions:**
+- Package: `@groveengine/cli`
+- Language: TypeScript
+- Auth: Keychain → env → config file
+
+**Next Steps:**
+1. Implement device code auth in Heartwood
+2. Add file upload endpoint to Amber
+3. Set up CLI framework with Commander.js
+4. Build shared service clients
+5. Implement core CLI commands
+6. Refactor MCP server to use shared clients
+
+**Recommended PR Order:**
+1. PR 1: Device code auth in Heartwood
+2. PR 2: File upload in Amber
+3. PR 3: CLI framework + auth commands
+4. PR 4: Lattice commands
+5. PR 5: Amber commands
+6. PR 6: Bloom commands
+7. PR 7: Foliage commands
+8. PR 8: MCP refactor
