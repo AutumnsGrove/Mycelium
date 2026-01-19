@@ -91,7 +91,75 @@ All endpoints on `https://auth-api.grove.place`.
 
 ---
 
-## CURRENT: MCP Routing (In Progress - 2025-01-03)
+## CURRENT: Grove CLI Device Code Auth (In Progress - 2026-01-19)
+
+**Goal:** Implement RFC 8628 Device Authorization Grant for `grove login` command, enabling browser-based authentication without manual token entry.
+
+**Flow:**
+1. CLI requests device code from Heartwood → receives `user_code` + `device_code`
+2. CLI displays code and opens browser to verification URL
+3. User authenticates with Google OAuth, sees the code, approves
+4. CLI polls until approved → receives access token
+5. Token saved to system keychain
+
+### Completed Today ✅
+
+#### Mycelium (CLI) Side
+- [x] Added RFC 8628 types to `core/types.ts` (DeviceCodeResponse, TokenResponse, DeviceCodeError)
+- [x] Added `requestDeviceCode()` method to HeartWoodClient
+- [x] Added `pollDeviceCode()` method to HeartWoodClient
+- [x] Implemented full device code flow in `cli/commands/auth/index.ts`
+- [x] Added `open` package for cross-platform browser opening
+- [x] Created mock server at `tests/mocks/heartwood-mock.ts`
+- [x] Created device code tests at `tests/device-code.test.ts` (10 tests passing)
+- [x] Fixed TypeScript build errors (unused `ctx`, `Mycelium.mount()` type issue)
+
+#### GroveAuth (Heartwood) Side
+- [x] Created migration `008_grove_cli_client.sql` to register `grove-cli` as OAuth client
+- [x] Set `is_internal_service=1` so Google OAuth sets session cookie (not OAuth code)
+- [x] Fixed `SameSite=Strict` → `SameSite=Lax` in `src/lib/session.ts` for OAuth redirects
+- [x] Fixed user_code preservation through OAuth redirect in `src/routes/device.ts`
+- [x] **Fixed session mismatch:** Updated device page to use `grove_session` cookie instead of Better Auth session
+
+#### Key Discovery: Two Session Systems
+- **Better Auth** uses `better-auth.session_token` cookie
+- **Google OAuth flow** creates `grove_session` cookie (custom SessionDO)
+- Device page was checking wrong cookie → infinite login loop
+- Fixed by using `getSessionFromRequest()` from `lib/session.ts`
+
+### Remaining Tasks
+
+- [ ] Wire up `grove login` command in CLI (command exists but not registered)
+- [ ] Test full end-to-end flow (CLI → browser → approval → token saved)
+- [ ] Implement `grove logout` command
+- [ ] Implement `grove whoami` command
+- [ ] Add token refresh logic
+
+### Files Modified
+
+**Mycelium:**
+```
+core/types.ts                    (added device code types)
+core/services/heartwood.ts       (added requestDeviceCode, pollDeviceCode)
+cli/commands/auth/index.ts       (implemented device code flow)
+tests/mocks/heartwood-mock.ts    (new - mock server)
+tests/device-code.test.ts        (new - 10 tests)
+```
+
+**GroveAuth:**
+```
+src/db/migrations/008_grove_cli_client.sql  (new - register grove-cli)
+src/lib/session.ts                          (SameSite=Lax fix)
+src/routes/device.ts                        (grove_session cookie, user_code preservation)
+```
+
+### Deployment Status
+- GroveAuth: Deployed (v 54db9b65-8644-4357-8554-9f5b2703867a)
+- Mycelium CLI: Built but login command not wired up yet
+
+---
+
+## MCP Routing (In Progress - 2025-01-03)
 
 **Goal:** Fix MCP connection by using proper McpAgent.mount() pattern.
 
