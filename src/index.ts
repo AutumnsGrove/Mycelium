@@ -10,6 +10,7 @@
 
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 
+import { McpAgent } from "agents/mcp";
 import type { Env } from "./types";
 import { Mycelium } from "./agent";
 import { handleAuthorize, handleCallback } from "./auth/oauth-handlers";
@@ -24,7 +25,7 @@ import { handleAuthorize, handleCallback } from "./auth/oauth-handlers";
  */
 const defaultHandler: ExportedHandler<Env> = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: any): Promise<Response> {
     const url = new URL(request.url);
 
     // Authorization endpoint - redirects to Heartwood
@@ -107,12 +108,18 @@ const defaultHandler: ExportedHandler<Env> = {
  * - Bearer token validation for MCP routes
  * - MCP connection via Mycelium.mount()
  */
+// Type helper for McpAgent.mount static method
+// (TypeScript bundler resolution doesn't pick up static methods from agents/mcp)
+type McpAgentWithMount = typeof McpAgent & {
+  mount(path: string): { fetch: (req: Request, env: unknown, ctx: ExecutionContext) => Promise<Response> };
+};
+
 export default new OAuthProvider({
   // Use mount() to create the fetch handler for MCP connections
   // This handles both SSE and streamable HTTP transports
   apiRoute: "/sse",
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  apiHandler: Mycelium.mount("/sse") as any,
+  apiHandler: (Mycelium as unknown as McpAgentWithMount).mount("/sse") as any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   defaultHandler: defaultHandler as any,
   authorizeEndpoint: "/authorize",
