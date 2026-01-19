@@ -3,7 +3,13 @@
  * Shared between CLI and MCP server
  */
 
-import type { User, Session } from '../types.js';
+import type {
+  User,
+  Session,
+  DeviceCodeResponse,
+  TokenResponse,
+  DeviceCodeError,
+} from '../types.js';
 
 export interface HeartWoodClientOptions {
   token?: string;
@@ -96,9 +102,64 @@ export class HeartWoodClient {
     }
   }
 
-  // Device code flow methods will be added when Heartwood implements them
-  // async requestDeviceCode(): Promise<DeviceCodeResponse>
-  // async pollDeviceCode(deviceCode: string): Promise<TokenResponse | 'pending'>
+  /**
+   * Request a device code for the device authorization grant flow (RFC 8628)
+   * The user will need to visit the verification URL and enter the user_code
+   */
+  async requestDeviceCode(clientId: string): Promise<DeviceCodeResponse> {
+    const response = await fetch(`${this.baseUrl}/auth/device-code`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ client_id: clientId }),
+    });
+
+    if (!response.ok) {
+      throw new HeartWoodApiError(
+        `Failed to request device code: ${response.status}`,
+        response.status
+      );
+    }
+
+    return response.json() as Promise<DeviceCodeResponse>;
+  }
+
+  /**
+   * Poll for token after user has authorized the device code
+   * Returns TokenResponse on success, or DeviceCodeError if still pending/failed
+   */
+  async pollDeviceCode(
+    deviceCode: string,
+    clientId: string
+  ): Promise<TokenResponse | DeviceCodeError> {
+    const response = await fetch(`${this.baseUrl}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: deviceCode,
+        client_id: clientId,
+      }),
+    });
+
+    const data = (await response.json()) as TokenResponse | DeviceCodeError;
+
+    if (!response.ok) {
+      // RFC 8628 errors come as 400 status with error field
+      if ('error' in data) {
+        return data;
+      }
+      throw new HeartWoodApiError(
+        `Failed to poll device code: ${response.status}`,
+        response.status
+      );
+    }
+
+    return data as TokenResponse;
+  }
 }
 
 export class HeartWoodApiError extends Error {

@@ -9,6 +9,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import open from 'open';
 import {
   getToken,
   saveToken,
@@ -17,7 +18,11 @@ import {
   getTokenStorageLocation,
 } from '../../utils/auth.js';
 import { getTenant } from '../../utils/config.js';
-import { HeartWoodClient } from '../../../core/services/heartwood.js';
+import {
+  HeartWoodClient,
+  HeartWoodApiError,
+} from '../../../core/services/heartwood.js';
+import type { DeviceCodeError, TokenResponse } from '../../../core/types.js';
 import {
   output,
   error,
@@ -27,6 +32,27 @@ import {
   section,
   shouldOutputJson,
 } from '../../utils/output.js';
+
+// Device code flow constants
+const CLIENT_ID = 'grove-cli';
+const DEFAULT_POLL_INTERVAL = 5; // seconds
+const MAX_POLL_TIME = 900; // 15 minutes
+
+/**
+ * Type guard to check if response is a DeviceCodeError
+ */
+function isDeviceCodeError(
+  response: TokenResponse | DeviceCodeError
+): response is DeviceCodeError {
+  return 'error' in response;
+}
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export const authCommand = new Command('auth')
   .description('Manage authentication');
@@ -80,25 +106,200 @@ authCommand
         error('Failed to validate token', err instanceof Error ? err.message : err);
       }
     } else {
-      // Device code flow (not yet implemented in Heartwood)
-      if (shouldOutputJson()) {
-        output({
-          error: 'device_code_not_available',
-          message: 'Device code flow not yet implemented. Use --token flag.',
-        });
+      // Device code flow (RFC 8628)
+      const client = new HeartWoodClient();
+
+      // Step 1: Request device code
+      let deviceCodeResponse;
+      try {
+        deviceCodeResponse = await client.requestDeviceCode(CLIENT_ID);
+      } catch (err) {
+        if (shouldOutputJson()) {
+          output({
+            error: 'device_code_request_failed',
+            message:
+              err instanceof Error ? err.message : 'Failed to initiate login',
+          });
+        } else {
+          error(
+            'Failed to initiate login',
+            err instanceof Error ? err.message : undefined
+          );
+          if (err instanceof HeartWoodApiError && err.status >= 500) {
+            info('The auth service may be temporarily unavailable. Try again later.');
+          }
+        }
         return;
       }
 
-      header('Grove Login');
-      warn('Device code flow coming soon!');
-      console.log();
-      info('For now, you can log in with a token:');
-      console.log(`  ${chalk.cyan('grove login --token <your-token>')}`);
-      console.log();
-      info('To get a token:');
-      console.log('  1. Log in to your Grove dashboard');
-      console.log('  2. Go to Settings → API Tokens');
-      console.log('  3. Create a new CLI token');
+      const { device_code, user_code, verification_uri, interval, expires_in } =
+        deviceCodeResponse;
+
+      // Step 2: Display instructions and open browser
+      if (shouldOutputJson()) {
+        output({
+          status: 'awaiting_authorization',
+          user_code,
+          verification_uri,
+          expires_in,
+        });
+      } else {
+        header('Grove Login');
+        console.log();
+        console.log('  Opening browser...');
+        console.log(`  Or visit: ${chalk.cyan(verification_uri)}`);
+        console.log();
+        console.log(`  Enter code: ${chalk.bold.yellow(user_code)}`);
+        console.log();
+      }
+
+      // Open browser (non-blocking, we don't wait for it)
+      try {
+        await open(verification_uri);
+      } catch {
+        // Browser open failed, user can still manually visit the URL
+        if (!shouldOutputJson()) {
+          warn('Could not open browser automatically');
+        }
+      }
+
+      // Step 3: Poll for authorization
+      const spinner = shouldOutputJson()
+        ? null
+        : ora('Waiting for authorization...').start();
+      let pollInterval = interval || DEFAULT_POLL_INTERVAL;
+      const startTime = Date.now();
+      const maxTime = Math.min(expires_in * 1000, MAX_POLL_TIME * 1000);
+
+      while (Date.now() - startTime < maxTime) {
+        await sleep(pollInterval * 1000);
+
+        try {
+          const result = await client.pollDeviceCode(device_code, CLIENT_ID);
+
+          if (isDeviceCodeError(result)) {
+            switch (result.error) {
+              case 'authorization_pending':
+                // Keep polling
+                continue;
+
+              case 'slow_down':
+                // Increase interval as requested
+                pollInterval = result.interval || pollInterval + 5;
+                continue;
+
+              case 'access_denied':
+                spinner?.fail('Authorization denied');
+                if (shouldOutputJson()) {
+                  output({
+                    error: 'access_denied',
+                    message: 'Authorization denied. Please try again.',
+                  });
+                } else {
+                  error('Authorization denied. Please try again.');
+                }
+                return;
+
+              case 'expired_token':
+                spinner?.fail('Authorization timed out');
+                if (shouldOutputJson()) {
+                  output({
+                    error: 'expired_token',
+                    message:
+                      'Authorization timed out. Please run `grove login` again.',
+                  });
+                } else {
+                  error(
+                    'Authorization timed out. Please run `grove login` again.'
+                  );
+                }
+                return;
+
+              case 'invalid_grant':
+                spinner?.fail('Invalid authorization code');
+                if (shouldOutputJson()) {
+                  output({
+                    error: 'invalid_grant',
+                    message: 'Invalid authorization code. Please try again.',
+                  });
+                } else {
+                  error('Invalid authorization code. Please try again.');
+                }
+                return;
+            }
+          } else {
+            // Success! We got tokens
+            if (spinner) {
+              spinner.text = 'Saving token...';
+            }
+
+            // Save the access token (and refresh token if present)
+            const location = await saveToken(
+              result.access_token,
+              result.refresh_token
+            );
+
+            // Fetch user info to display
+            const authClient = new HeartWoodClient({
+              token: result.access_token,
+            });
+            const user = await authClient.getUserInfo();
+
+            spinner?.succeed('Logged in successfully');
+
+            if (shouldOutputJson()) {
+              output({
+                success: true,
+                user: user
+                  ? {
+                      email: user.email,
+                      name: user.name,
+                      role: user.role,
+                    }
+                  : null,
+                storage: location,
+              });
+            } else {
+              console.log();
+              if (user) {
+                console.log(
+                  `  ${chalk.green('✓')} Logged in as ${chalk.cyan(user.email)}`
+                );
+              } else {
+                console.log(`  ${chalk.green('✓')} Logged in`);
+              }
+              console.log(`    Token saved to ${location}`);
+            }
+            return;
+          }
+        } catch (err) {
+          // Network error during polling
+          spinner?.fail('Network error');
+          if (shouldOutputJson()) {
+            output({
+              error: 'network_error',
+              message: 'Network error. Check your connection.',
+            });
+          } else {
+            error(
+              'Network error. Check your connection.',
+              err instanceof Error ? err.message : undefined
+            );
+          }
+          return;
+        }
+      }
+
+      // Timeout (shouldn't normally reach here as server handles expiry)
+      spinner?.fail('Authorization timed out');
+      if (shouldOutputJson()) {
+        output({
+          error: 'timeout',
+          message: 'Authorization timed out. Please run `grove login` again.',
+        });
+      } else {
+        error('Authorization timed out. Please run `grove login` again.');
+      }
     }
   });
 
