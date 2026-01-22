@@ -43,6 +43,9 @@ coverage/
 *.temp
 .cache/
 
+# BaseProject update backups
+.baseproject-backup-*/
+
 # Cloned reference repos (Phase 1 exploration)
 Amber/
 Foliage/
